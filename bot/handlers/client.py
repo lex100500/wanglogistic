@@ -5,7 +5,6 @@ from aiogram.fsm.state import State, StatesGroup
 
 from bot import database as db
 from bot import keyboards as kb
-from bot.config import MANAGER_GROUP_CHAT_ID
 
 router = Router()
 
@@ -17,11 +16,23 @@ STATUS_TEXT = {
     "cancelled": "Отменена",
 }
 
+PAIR = "RUB/CNY"
+
 
 class OrderFSM(StatesGroup):
+    waiting_pay_method = State()
     waiting_amount = State()
     waiting_confirm = State()
-    waiting_message = State()  # relay — клиент пишет менеджеру
+    waiting_message = State()
+
+
+class ProfileFSM(StatesGroup):
+    waiting_wechat_qr = State()
+    waiting_alipay_qr = State()
+    waiting_card_number = State()
+    waiting_card_bank = State()
+    waiting_card_holder = State()
+    waiting_card_phone = State()
 
 
 # ---- /start ----
@@ -32,7 +43,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
     db.upsert_user(message.from_user.id, message.from_user.username, message.from_user.first_name)
     await message.answer(
         f"Добро пожаловать, {message.from_user.first_name}!\n"
-        "Я помогу вам обменять валюту. Выберите действие:",
+        "Обмен рублей и юаней. Выберите действие:",
         reply_markup=kb.main_menu(),
     )
 
@@ -49,42 +60,113 @@ async def back_menu(callback: types.CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "help")
 async def show_help(callback: types.CallbackQuery):
     await callback.message.edit_text(
-        "Как пользоваться:\n"
-        "1. Нажмите «Обменять»\n"
-        "2. Выберите валютную пару\n"
-        "3. Введите сумму\n"
-        "4. Подтвердите заявку\n"
-        "5. Менеджер свяжется с вами через бота\n\n"
-        "По вопросам: напишите в поддержку.",
+        "Напишите менеджеру — @bulievich",
         reply_markup=kb.main_menu(),
     )
     await callback.answer()
 
 
-# ---- Обмен: выбор пары ----
+# ---- Обмен: выбор направления ----
 
 @router.callback_query(F.data == "exchange")
-async def select_pair(callback: types.CallbackQuery, state: FSMContext):
+async def select_direction(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
-    await callback.message.edit_text("Выберите валютную пару:", reply_markup=kb.currency_pairs_kb())
+    active = db.get_user_active_order(callback.from_user.id)
+    if active:
+        st = STATUS_TEXT.get(active["status"], active["status"])
+        await callback.message.edit_text(
+            f"У вас уже есть активная заявка #{active['id']} ({st}).\n"
+            "Дождитесь её завершения или отмены.",
+            reply_markup=kb.main_menu(),
+        )
+        await callback.answer()
+        return
+    rate_row = db.get_rate(PAIR)
+    buy = rate_row["buy_rate"] if rate_row else "—"
+    sell = rate_row["sell_rate"] if rate_row else "—"
+    await callback.message.edit_text(
+        f"Курсы RUB/CNY:\n"
+        f"Покупка (RUB→CNY): {buy}\n"
+        f"Продажа (CNY→RUB): {sell}\n\n"
+        "Выберите направление обмена:",
+        reply_markup=kb.direction_kb(),
+    )
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("pair:"))
-async def pair_selected(callback: types.CallbackQuery, state: FSMContext):
-    pair = callback.data.split(":", 1)[1]
-    rate_row = db.get_rate(pair)
+@router.callback_query(F.data.startswith("dir:"))
+async def direction_selected(callback: types.CallbackQuery, state: FSMContext):
+    _, cur_from, cur_to = callback.data.split(":")
+    rate_row = db.get_rate(PAIR)
     if not rate_row:
         await callback.answer("Курс не найден", show_alert=True)
         return
-    cur_from, cur_to = pair.split("/")
+
+    if cur_from == "RUB":
+        rate = rate_row["buy_rate"]
+    else:
+        rate = rate_row["sell_rate"]
+
+    # RUB→CNY: нужен QR-код для получения юаней
+    if cur_from == "RUB":
+        profile = db.get_profile(callback.from_user.id)
+        has_wechat = profile and profile["wechat_qr"]
+        has_alipay = profile and profile["alipay_qr"]
+
+        if not has_wechat and not has_alipay:
+            await callback.message.edit_text(
+                "Для покупки юаней нужен QR-код WeChat или Alipay.\n"
+                "Добавьте его в профиле.",
+                reply_markup=kb.profile_menu_kb(only="qr"),
+            )
+            await callback.answer()
+            return
+
+        await state.update_data(cur_from=cur_from, cur_to=cur_to, rate=rate)
+
+        if has_wechat and has_alipay:
+            # Оба — спрашиваем
+            await state.set_state(OrderFSM.waiting_pay_method)
+            await callback.message.edit_text(
+                "Куда хотите получить юани?",
+                reply_markup=kb.pay_method_kb(),
+            )
+            await callback.answer()
+            return
+        else:
+            # Один — авто
+            method = "wechat" if has_wechat else "alipay"
+            await state.update_data(pay_method=method)
+            await state.set_state(OrderFSM.waiting_amount)
+            await callback.message.edit_text(f"Введите сумму в {cur_from}:")
+            await callback.answer()
+            return
+
+    # CNY→RUB: нужна карта для получения рублей
+    if cur_from == "CNY":
+        profile = db.get_profile(callback.from_user.id)
+        if not profile or not profile["card_number"]:
+            await callback.message.edit_text(
+                "Для продажи юаней нужны реквизиты карты.\n"
+                "Добавьте их в профиле.",
+                reply_markup=kb.profile_menu_kb(only="card"),
+            )
+            await callback.answer()
+            return
+
     await state.set_state(OrderFSM.waiting_amount)
-    await state.update_data(pair=pair, cur_from=cur_from, cur_to=cur_to, rate=rate_row["buy_rate"])
-    await callback.message.edit_text(
-        f"Пара: {pair}\n"
-        f"Курс: {rate_row['buy_rate']}\n\n"
-        f"Введите сумму в {cur_from}:"
-    )
+    await state.update_data(cur_from=cur_from, cur_to=cur_to, rate=rate, pay_method=None)
+    await callback.message.edit_text(f"Введите сумму в {cur_from}:")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("pay:"), OrderFSM.waiting_pay_method)
+async def pay_method_selected(callback: types.CallbackQuery, state: FSMContext):
+    method = callback.data.split(":", 1)[1]  # wechat или alipay
+    await state.update_data(pay_method=method)
+    await state.set_state(OrderFSM.waiting_amount)
+    data = await state.get_data()
+    await callback.message.edit_text(f"Введите сумму в {data['cur_from']}:")
     await callback.answer()
 
 
@@ -103,7 +185,13 @@ async def enter_amount(message: types.Message, state: FSMContext):
 
     data = await state.get_data()
     rate = data["rate"]
-    result = round(amount * rate, 2)
+
+    # RUB→CNY: юани = рубли / курс
+    # CNY→RUB: рубли = юани * курс
+    if data["cur_from"] == "RUB":
+        result = round(amount / rate, 2)
+    else:
+        result = round(amount * rate, 2)
 
     await state.update_data(amount=amount, amount_result=result)
     await state.set_state(OrderFSM.waiting_confirm)
@@ -129,6 +217,7 @@ async def confirm_order(callback: types.CallbackQuery, state: FSMContext, bot: B
         amount=data["amount"],
         rate=data["rate"],
         amount_result=data["amount_result"],
+        pay_method=data.get("pay_method"),
     )
     await state.clear()
 
@@ -140,12 +229,13 @@ async def confirm_order(callback: types.CallbackQuery, state: FSMContext, bot: B
     )
     await callback.answer()
 
-    # Уведомление менеджерам
-    if MANAGER_GROUP_CHAT_ID:
+    # Уведомляем всех менеджеров лично
+    managers = db.get_all_active_managers()
+    for mgr in managers:
         try:
             await bot.send_message(
-                MANAGER_GROUP_CHAT_ID,
-                f"Новая заявка #{order_id}\n"
+                mgr["tg_id"],
+                f"🆕 Новая заявка #{order_id}\n"
                 f"Клиент: {callback.from_user.first_name} (@{callback.from_user.username or '—'})\n"
                 f"{data['amount']} {data['cur_from']} → {data['amount_result']} {data['cur_to']}\n"
                 f"Курс: {data['rate']}",
@@ -211,6 +301,156 @@ async def order_detail(callback: types.CallbackQuery):
     await callback.answer()
 
 
+# ---- Профиль ----
+
+def _profile_kb(p):
+    """Клавиатура профиля с кнопками удаления если данные есть."""
+    return kb.profile_menu_kb(
+        has_wechat=bool(p and p["wechat_qr"]),
+        has_alipay=bool(p and p["alipay_qr"]),
+        has_card=bool(p and p["card_number"]),
+    )
+
+
+@router.callback_query(F.data == "profile")
+async def show_profile(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    p = db.get_profile(callback.from_user.id)
+    lines = ["Ваш профиль:\n"]
+    if p:
+        lines.append(f"WeChat QR: {'загружен' if p['wechat_qr'] else 'не задан'}")
+        lines.append(f"Alipay QR: {'загружен' if p['alipay_qr'] else 'не задан'}")
+        if p["card_number"]:
+            lines.append(f"\nРеквизиты карты:")
+            lines.append(f"  Номер: {p['card_number']}")
+            lines.append(f"  Банк: {p['card_bank'] or '—'}")
+            lines.append(f"  ФИО: {p['card_holder'] or '—'}")
+            lines.append(f"  Телефон: {p['card_phone'] or '—'}")
+        else:
+            lines.append("Реквизиты карты: не заданы")
+    else:
+        lines.append("Данные не заполнены")
+    lines.append("\nНажмите кнопку чтобы изменить (X — удалить):")
+    await callback.message.edit_text("\n".join(lines), reply_markup=_profile_kb(p))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("profile_del:"))
+async def profile_delete(callback: types.CallbackQuery):
+    field = callback.data.split(":", 1)[1]
+    uid = callback.from_user.id
+    if field == "wechat_qr":
+        db.update_profile(uid, wechat_qr=None)
+    elif field == "alipay_qr":
+        db.update_profile(uid, alipay_qr=None)
+    elif field == "card":
+        db.update_profile(uid, card_number=None, card_bank=None, card_holder=None, card_phone=None)
+    p = db.get_profile(uid)
+    lines = ["Данные удалены.\n\nВаш профиль:\n"]
+    if p:
+        lines.append(f"WeChat QR: {'загружен' if p['wechat_qr'] else 'не задан'}")
+        lines.append(f"Alipay QR: {'загружен' if p['alipay_qr'] else 'не задан'}")
+        if p["card_number"]:
+            lines.append(f"\nРеквизиты карты:")
+            lines.append(f"  Номер: {p['card_number']}")
+            lines.append(f"  Банк: {p['card_bank'] or '—'}")
+            lines.append(f"  ФИО: {p['card_holder'] or '—'}")
+            lines.append(f"  Телефон: {p['card_phone'] or '—'}")
+        else:
+            lines.append("Реквизиты карты: не заданы")
+    lines.append("\nНажмите кнопку чтобы изменить (X — удалить):")
+    await callback.message.edit_text("\n".join(lines), reply_markup=_profile_kb(p))
+    await callback.answer("Удалено")
+
+
+@router.callback_query(F.data == "profile:wechat_qr")
+async def profile_wechat(callback: types.CallbackQuery, state: FSMContext):
+    await state.set_state(ProfileFSM.waiting_wechat_qr)
+    await callback.message.edit_text("Отправьте фото QR-кода WeChat Pay:")
+    await callback.answer()
+
+
+@router.message(ProfileFSM.waiting_wechat_qr, F.photo)
+async def save_wechat_qr(message: types.Message, state: FSMContext):
+    file_id = message.photo[-1].file_id
+    db.update_profile(message.from_user.id, wechat_qr=file_id)
+    await state.clear()
+    p = db.get_profile(message.from_user.id)
+    await message.answer("WeChat QR сохранён!", reply_markup=_profile_kb(p))
+
+
+@router.message(ProfileFSM.waiting_wechat_qr)
+async def save_wechat_qr_invalid(message: types.Message):
+    await message.answer("Отправьте именно фото (не файл):")
+
+
+@router.callback_query(F.data == "profile:alipay_qr")
+async def profile_alipay(callback: types.CallbackQuery, state: FSMContext):
+    await state.set_state(ProfileFSM.waiting_alipay_qr)
+    await callback.message.edit_text("Отправьте фото QR-кода Alipay:")
+    await callback.answer()
+
+
+@router.message(ProfileFSM.waiting_alipay_qr, F.photo)
+async def save_alipay_qr(message: types.Message, state: FSMContext):
+    file_id = message.photo[-1].file_id
+    db.update_profile(message.from_user.id, alipay_qr=file_id)
+    await state.clear()
+    p = db.get_profile(message.from_user.id)
+    await message.answer("Alipay QR сохранён!", reply_markup=_profile_kb(p))
+
+
+@router.message(ProfileFSM.waiting_alipay_qr)
+async def save_alipay_qr_invalid(message: types.Message):
+    await message.answer("Отправьте именно фото (не файл):")
+
+
+@router.callback_query(F.data == "profile:card")
+async def profile_card(callback: types.CallbackQuery, state: FSMContext):
+    await state.set_state(ProfileFSM.waiting_card_number)
+    await callback.message.edit_text("Введите номер карты или телефон (для СБП):")
+    await callback.answer()
+
+
+@router.message(ProfileFSM.waiting_card_number)
+async def save_card_number(message: types.Message, state: FSMContext):
+    db.update_profile(message.from_user.id, card_number=message.text.strip())
+    await state.set_state(ProfileFSM.waiting_card_bank)
+    await message.answer("Введите название банка:")
+
+
+@router.message(ProfileFSM.waiting_card_bank)
+async def save_card_bank(message: types.Message, state: FSMContext):
+    db.update_profile(message.from_user.id, card_bank=message.text.strip())
+    await state.set_state(ProfileFSM.waiting_card_holder)
+    await message.answer("Введите ФИО получателя:")
+
+
+@router.message(ProfileFSM.waiting_card_holder)
+async def save_card_holder(message: types.Message, state: FSMContext):
+    db.update_profile(message.from_user.id, card_holder=message.text.strip())
+    await state.set_state(ProfileFSM.waiting_card_phone)
+    await message.answer("Введите номер телефона получателя (или «-» чтобы пропустить):")
+
+
+@router.message(ProfileFSM.waiting_card_phone)
+async def save_card_phone(message: types.Message, state: FSMContext):
+    phone = message.text.strip()
+    if phone == "-":
+        phone = None
+    db.update_profile(message.from_user.id, card_phone=phone)
+    await state.clear()
+    p = db.get_profile(message.from_user.id)
+    await message.answer(
+        f"Реквизиты сохранены!\n\n"
+        f"Номер: {p['card_number']}\n"
+        f"Банк: {p['card_bank']}\n"
+        f"ФИО: {p['card_holder']}\n"
+        f"Телефон: {p['card_phone'] or '—'}",
+        reply_markup=_profile_kb(p),
+    )
+
+
 # ---- Relay: клиент → менеджер ----
 
 @router.callback_query(F.data.startswith("msg:"))
@@ -256,7 +496,6 @@ async def relay_client_to_manager(message: types.Message, state: FSMContext, bot
     await state.clear()
     await message.answer("Сообщение отправлено менеджеру.", reply_markup=kb.main_menu())
 
-    # Пересылка менеджеру
     manager_id = order["manager_id"]
     if manager_id:
         try:
@@ -267,11 +506,14 @@ async def relay_client_to_manager(message: types.Message, state: FSMContext, bot
             )
         except Exception:
             pass
-    elif MANAGER_GROUP_CHAT_ID:
-        try:
-            await bot.send_message(
-                MANAGER_GROUP_CHAT_ID,
-                f"Сообщение от клиента по заявке #{order_id}:\n\n{message.text}",
-            )
-        except Exception:
-            pass
+    else:
+        # Если менеджер не назначен — шлём всем менеджерам
+        managers = db.get_all_active_managers()
+        for mgr in managers:
+            try:
+                await bot.send_message(
+                    mgr["tg_id"],
+                    f"Сообщение от клиента по заявке #{order_id}:\n\n{message.text}",
+                )
+            except Exception:
+                pass

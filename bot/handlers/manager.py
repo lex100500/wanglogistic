@@ -1,4 +1,5 @@
 from aiogram import Router, F, types, Bot
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
@@ -6,6 +7,8 @@ from bot import database as db
 from bot import keyboards as kb
 
 router = Router()
+
+PAIR = "RUB/CNY"
 
 STATUS_TEXT = {
     "new": "Новая",
@@ -18,6 +21,68 @@ STATUS_TEXT = {
 
 class ManagerFSM(StatesGroup):
     waiting_message = State()  # relay — менеджер пишет клиенту
+    waiting_buy_rate = State()
+    waiting_sell_rate = State()
+
+
+# ---- /rate — менеджер меняет курс ----
+
+@router.message(Command("change"))
+async def cmd_rate(message: types.Message, state: FSMContext):
+    if not db.is_manager(message.from_user.id):
+        return
+    rate = db.get_rate(PAIR)
+    buy = rate["buy_rate"] if rate else "—"
+    sell = rate["sell_rate"] if rate else "—"
+    await state.set_state(ManagerFSM.waiting_buy_rate)
+    await message.answer(
+        f"Текущий курс {PAIR}:\n"
+        f"Покупка (RUB→CNY): {buy}\n"
+        f"Продажа (CNY→RUB): {sell}\n\n"
+        "Введите новый курс покупки (RUB→CNY):"
+    )
+
+
+@router.message(ManagerFSM.waiting_buy_rate)
+async def enter_buy_rate(message: types.Message, state: FSMContext):
+    if message.text and message.text.startswith("/"):
+        await state.clear()
+        await message.answer("Отменено.")
+        return
+    try:
+        buy = float(message.text.replace(",", ".").strip())
+        if buy <= 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        await message.answer("Введите число больше 0:")
+        return
+    await state.update_data(new_buy=buy)
+    await state.set_state(ManagerFSM.waiting_sell_rate)
+    await message.answer("Введите новый курс продажи (CNY→RUB):")
+
+
+@router.message(ManagerFSM.waiting_sell_rate)
+async def enter_sell_rate(message: types.Message, state: FSMContext):
+    if message.text and message.text.startswith("/"):
+        await state.clear()
+        await message.answer("Отменено.")
+        return
+    try:
+        sell = float(message.text.replace(",", ".").strip())
+        if sell <= 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        await message.answer("Введите число больше 0:")
+        return
+    data = await state.get_data()
+    buy = data["new_buy"]
+    db.update_rate(PAIR, buy, sell, changed_by=message.from_user.id, source="bot")
+    await state.clear()
+    await message.answer(
+        f"Курс {PAIR} обновлён:\n"
+        f"Покупка: {buy}\n"
+        f"Продажа: {sell}"
+    )
 
 
 # ---- Взять заказ ----
@@ -37,10 +102,11 @@ async def take_order(callback: types.CallbackQuery, bot: Bot):
     db.add_manager(callback.from_user.id, callback.from_user.username, callback.from_user.first_name)
     db.update_order_status(order_id, "taken", manager_id=callback.from_user.id)
 
+    has_qr = order["currency_from"] == "RUB" and (order["pay_method"] if "pay_method" in order.keys() else None)
     await callback.message.edit_text(
         f"Заявка #{order_id} взята менеджером {callback.from_user.first_name}\n"
         f"{order['amount']} {order['currency_from']} → {order['amount_result']} {order['currency_to']}",
-        reply_markup=kb.manager_status_kb(order_id),
+        reply_markup=kb.manager_status_kb(order_id, show_qr=bool(has_qr)),
     )
     await callback.answer("Вы взяли заказ")
 
@@ -52,6 +118,41 @@ async def take_order(callback: types.CallbackQuery, bot: Bot):
         )
     except Exception:
         pass
+
+
+# ---- QR-код клиента ----
+
+@router.callback_query(F.data.startswith("get_qr:"))
+async def get_client_qr(callback: types.CallbackQuery, bot: Bot):
+    order_id = callback.data.split(":", 1)[1]
+    order = db.get_order(order_id)
+    if not order:
+        await callback.answer("Заявка не найдена", show_alert=True)
+        return
+
+    pay_method = (order["pay_method"] if "pay_method" in order.keys() else None)
+    if not pay_method:
+        await callback.answer("У этой заявки нет QR-кода", show_alert=True)
+        return
+
+    profile = db.get_profile(order["user_id"])
+    if not profile:
+        await callback.answer("Профиль клиента не найден", show_alert=True)
+        return
+
+    qr_file_id = profile["wechat_qr"] if pay_method == "wechat" else profile["alipay_qr"]
+    method_name = "WeChat Pay" if pay_method == "wechat" else "Alipay"
+
+    if not qr_file_id:
+        await callback.answer(f"QR-код {method_name} не загружен клиентом", show_alert=True)
+        return
+
+    await bot.send_photo(
+        callback.from_user.id,
+        photo=qr_file_id,
+        caption=f"QR-код клиента ({method_name}) для заявки #{order_id}",
+    )
+    await callback.answer()
 
 
 # ---- Смена статуса ----
@@ -78,6 +179,7 @@ async def change_status(callback: types.CallbackQuery, bot: Bot):
     db.update_order_status(order_id, new_status)
 
     st = STATUS_TEXT.get(new_status, new_status)
+    has_qr = order["currency_from"] == "RUB" and (order["pay_method"] if "pay_method" in order.keys() else None)
     if new_status in ("completed", "cancelled"):
         await callback.message.edit_text(
             f"Заявка #{order_id} — {st}\n"
@@ -87,7 +189,7 @@ async def change_status(callback: types.CallbackQuery, bot: Bot):
         await callback.message.edit_text(
             f"Заявка #{order_id} — {st}\n"
             f"{order['amount']} {order['currency_from']} → {order['amount_result']} {order['currency_to']}",
-            reply_markup=kb.manager_status_kb(order_id),
+            reply_markup=kb.manager_status_kb(order_id, show_qr=bool(has_qr)),
         )
     await callback.answer(f"Статус: {st}")
 

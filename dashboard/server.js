@@ -1,16 +1,25 @@
 const express = require('express');
 const Database = require('better-sqlite3');
 const path = require('path');
+const fs = require('fs');
+const { execSync } = require('child_process');
 
 const app = express();
 const PORT = 3001;
 const DB_PATH = path.join(__dirname, '..', 'data', 'wanglogistic.db');
+const CONFIG_PATH = path.join(__dirname, '..', 'bot', 'config.py');
 
 app.use(express.json());
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Ensure data directory exists
-const fs = require('fs');
 const dataDir = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
@@ -71,16 +80,63 @@ db.exec(`
     key TEXT PRIMARY KEY,
     value TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS rate_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pair TEXT NOT NULL,
+    buy_rate REAL NOT NULL,
+    sell_rate REAL NOT NULL,
+    changed_by INTEGER,
+    source TEXT DEFAULT 'dashboard',
+    created_at TEXT DEFAULT (datetime('now'))
+  );
 `);
 
 // Insert default rates if empty
 const rateCount = db.prepare('SELECT COUNT(*) as cnt FROM rates').get();
 if (rateCount.cnt === 0) {
-  const insertRate = db.prepare('INSERT INTO rates (pair, buy_rate, sell_rate) VALUES (?, ?, ?)');
-  insertRate.run('USD/RUB', 92.50, 94.00);
-  insertRate.run('EUR/RUB', 100.50, 102.00);
-  insertRate.run('USDT/RUB', 92.00, 93.50);
-  insertRate.run('CNY/RUB', 12.80, 13.20);
+  db.prepare('INSERT INTO rates (pair, buy_rate, sell_rate) VALUES (?, ?, ?)').run('RUB/CNY', 12.80, 13.20);
+}
+
+// ============ Helper: read/write config.py ============
+
+function readConfig() {
+  try {
+    const content = fs.readFileSync(CONFIG_PATH, 'utf8');
+    const m = content.match(/^BOT_TOKEN\s*=\s*["'](.+?)["']/m);
+    return { bot_token: m ? m[1] : '' };
+  } catch (e) {
+    return { bot_token: '' };
+  }
+}
+
+function writeConfig(bot_token) {
+  const content = `BOT_TOKEN = "${bot_token}"
+DB_PATH = "/root/projects/wanglogistic/data/wanglogistic.db"
+
+DEFAULT_RATES = {
+    "RUB/CNY": {"buy": 12.80, "sell": 13.20},
+}
+`;
+  fs.writeFileSync(CONFIG_PATH, content, 'utf8');
+}
+
+function restartBot() {
+  try {
+    execSync('systemctl restart wanglogistic-bot', { timeout: 10000 });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function getBotStatus() {
+  try {
+    const output = execSync('systemctl is-active wanglogistic-bot', { timeout: 5000 }).toString().trim();
+    return output;
+  } catch (e) {
+    return 'inactive';
+  }
 }
 
 // ============ API: Stats ============
@@ -252,6 +308,28 @@ app.post('/api/managers', (req, res) => {
   }
 });
 
+app.put('/api/managers/:id', (req, res) => {
+  try {
+    const { username, first_name, is_active } = req.body;
+    const sets = [];
+    const params = [];
+
+    if (username !== undefined) { sets.push('username = ?'); params.push(username); }
+    if (first_name !== undefined) { sets.push('first_name = ?'); params.push(first_name); }
+    if (is_active !== undefined) { sets.push('is_active = ?'); params.push(is_active ? 1 : 0); }
+
+    if (sets.length === 0) return res.status(400).json({ error: 'Nothing to update' });
+
+    params.push(req.params.id);
+    db.prepare(`UPDATE managers SET ${sets.join(', ')} WHERE tg_id = ?`).run(...params);
+
+    const manager = db.prepare('SELECT * FROM managers WHERE tg_id = ?').get(req.params.id);
+    res.json(manager);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.delete('/api/managers/:id', (req, res) => {
   try {
     db.prepare('DELETE FROM managers WHERE tg_id = ?').run(req.params.id);
@@ -272,10 +350,27 @@ app.get('/api/rates', (req, res) => {
   }
 });
 
-app.put('/api/rates/:pair', (req, res) => {
+app.get('/api/rates/log', (req, res) => {
   try {
-    const pair = decodeURIComponent(req.params.pair);
-    const { buy_rate, sell_rate } = req.body;
+    const pair = req.query.pair || 'RUB/CNY';
+    const limit = parseInt(req.query.limit) || 20;
+    const logs = db.prepare(`
+      SELECT l.*, m.username, m.first_name
+      FROM rate_log l
+      LEFT JOIN managers m ON l.changed_by = m.tg_id
+      WHERE l.pair = ?
+      ORDER BY l.created_at DESC LIMIT ?
+    `).all(pair, limit);
+    res.json(logs);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/rates', (req, res) => {
+  try {
+    const { pair, buy_rate, sell_rate } = req.body;
+    if (!pair) return res.status(400).json({ error: 'pair required' });
 
     db.prepare(`
       INSERT INTO rates (pair, buy_rate, sell_rate, updated_at)
@@ -286,6 +381,10 @@ app.put('/api/rates/:pair', (req, res) => {
         updated_at = datetime('now')
     `).run(pair, buy_rate, sell_rate);
 
+    db.prepare(
+      'INSERT INTO rate_log (pair, buy_rate, sell_rate, source) VALUES (?, ?, ?, ?)'
+    ).run(pair, buy_rate, sell_rate, 'dashboard');
+
     const rate = db.prepare('SELECT * FROM rates WHERE pair = ?').get(pair);
     res.json(rate);
   } catch (err) {
@@ -293,14 +392,12 @@ app.put('/api/rates/:pair', (req, res) => {
   }
 });
 
-// ============ API: Settings ============
+// ============ API: Settings + Bot control ============
 
 app.get('/api/settings', (req, res) => {
   try {
-    const rows = db.prepare('SELECT * FROM settings').all();
-    const settings = {};
-    rows.forEach(r => { settings[r.key] = r.value; });
-    res.json(settings);
+    const config = readConfig();
+    res.json({ bot_token: config.bot_token });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -308,17 +405,43 @@ app.get('/api/settings', (req, res) => {
 
 app.put('/api/settings', (req, res) => {
   try {
-    const upsert = db.prepare(`
-      INSERT INTO settings (key, value) VALUES (?, ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value
-    `);
-    const tx = db.transaction((entries) => {
-      for (const [key, value] of entries) {
-        upsert.run(key, value);
+    const { bot_token } = req.body;
+    let needRestart = false;
+
+    if (bot_token) {
+      const current = readConfig();
+      if (bot_token !== current.bot_token) {
+        writeConfig(bot_token);
+        needRestart = true;
+        restartBot();
       }
-    });
-    tx(Object.entries(req.body));
-    res.json({ ok: true });
+    }
+
+    res.json({ ok: true, restarted: needRestart });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Bot status & control
+app.get('/api/bot/status', (req, res) => {
+  try {
+    const status = getBotStatus();
+    let uptime = '';
+    try {
+      uptime = execSync('systemctl show wanglogistic-bot --property=ActiveEnterTimestamp --value', { timeout: 5000 }).toString().trim();
+    } catch (e) {}
+    res.json({ status, uptime });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/bot/restart', (req, res) => {
+  try {
+    const ok = restartBot();
+    const status = getBotStatus();
+    res.json({ ok, status });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

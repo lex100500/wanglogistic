@@ -1,5 +1,4 @@
 import sqlite3
-import uuid
 from datetime import datetime
 from typing import Optional
 
@@ -40,7 +39,7 @@ def init_db():
         );
 
         CREATE TABLE IF NOT EXISTS orders (
-            id TEXT PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
             currency_from TEXT NOT NULL,
             currency_to TEXT NOT NULL,
@@ -56,11 +55,33 @@ def init_db():
 
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            order_id TEXT NOT NULL,
+            order_id INTEGER NOT NULL,
             sender_id INTEGER NOT NULL,
             text TEXT NOT NULL,
             created_at TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (order_id) REFERENCES orders(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS profiles (
+            tg_id INTEGER PRIMARY KEY,
+            wechat_qr TEXT,
+            alipay_qr TEXT,
+            card_number TEXT,
+            card_bank TEXT,
+            card_holder TEXT,
+            card_phone TEXT,
+            updated_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (tg_id) REFERENCES users(tg_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS rate_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pair TEXT NOT NULL,
+            buy_rate REAL NOT NULL,
+            sell_rate REAL NOT NULL,
+            changed_by INTEGER,
+            source TEXT DEFAULT 'bot',
+            created_at TEXT DEFAULT (datetime('now'))
         );
     """)
     # Заполняем дефолтные курсы
@@ -102,17 +123,48 @@ def get_all_rates() -> list:
     return rows
 
 
+def update_rate(pair: str, buy_rate: float, sell_rate: float,
+                changed_by: Optional[int] = None, source: str = "bot"):
+    conn = get_conn()
+    conn.execute(
+        """INSERT INTO rates (pair, buy_rate, sell_rate, updated_at)
+           VALUES (?, ?, ?, datetime('now'))
+           ON CONFLICT(pair) DO UPDATE SET
+             buy_rate = excluded.buy_rate,
+             sell_rate = excluded.sell_rate,
+             updated_at = datetime('now')""",
+        (pair, buy_rate, sell_rate),
+    )
+    conn.execute(
+        "INSERT INTO rate_log (pair, buy_rate, sell_rate, changed_by, source) VALUES (?, ?, ?, ?, ?)",
+        (pair, buy_rate, sell_rate, changed_by, source),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_rate_log(pair: str, limit: int = 20) -> list:
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM rate_log WHERE pair = ? ORDER BY created_at DESC LIMIT ?",
+        (pair, limit),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
 # ---- Orders ----
 
 def create_order(user_id: int, currency_from: str, currency_to: str,
-                 amount: float, rate: float, amount_result: float) -> str:
-    order_id = uuid.uuid4().hex[:12]
+                 amount: float, rate: float, amount_result: float,
+                 pay_method: Optional[str] = None) -> int:
     conn = get_conn()
-    conn.execute(
-        """INSERT INTO orders (id, user_id, currency_from, currency_to, amount, rate, amount_result, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 'new')""",
-        (order_id, user_id, currency_from, currency_to, amount, rate, amount_result),
+    cursor = conn.execute(
+        """INSERT INTO orders (user_id, currency_from, currency_to, amount, rate, amount_result, status, pay_method)
+           VALUES (?, ?, ?, ?, ?, ?, 'new', ?)""",
+        (user_id, currency_from, currency_to, amount, rate, amount_result, pay_method),
     )
+    order_id = cursor.lastrowid
     conn.commit()
     conn.close()
     return order_id
@@ -121,6 +173,16 @@ def create_order(user_id: int, currency_from: str, currency_to: str,
 def get_order(order_id: str) -> Optional[sqlite3.Row]:
     conn = get_conn()
     row = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    conn.close()
+    return row
+
+
+def get_user_active_order(user_id: int):
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT * FROM orders WHERE user_id = ? AND status IN ('new', 'taken', 'in_progress') LIMIT 1",
+        (user_id,),
+    ).fetchone()
     conn.close()
     return row
 
@@ -185,6 +247,15 @@ def save_message(order_id: str, sender_id: int, text: str):
     conn.close()
 
 
+def get_all_active_managers() -> list:
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM managers WHERE is_active = 1"
+    ).fetchall()
+    conn.close()
+    return rows
+
+
 def get_messages(order_id: str) -> list:
     conn = get_conn()
     rows = conn.execute(
@@ -192,3 +263,29 @@ def get_messages(order_id: str) -> list:
     ).fetchall()
     conn.close()
     return rows
+
+
+# ---- Profiles ----
+
+def get_profile(tg_id: int) -> Optional[sqlite3.Row]:
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM profiles WHERE tg_id = ?", (tg_id,)).fetchone()
+    conn.close()
+    return row
+
+
+def update_profile(tg_id: int, **kwargs):
+    conn = get_conn()
+    existing = conn.execute("SELECT 1 FROM profiles WHERE tg_id = ?", (tg_id,)).fetchone()
+    if not existing:
+        conn.execute("INSERT INTO profiles (tg_id) VALUES (?)", (tg_id,))
+    sets = ["updated_at = datetime('now')"]
+    params = []
+    for key in ("wechat_qr", "alipay_qr", "card_number", "card_bank", "card_holder", "card_phone"):
+        if key in kwargs:
+            sets.append(f"{key} = ?")
+            params.append(kwargs[key])
+    params.append(tg_id)
+    conn.execute(f"UPDATE profiles SET {', '.join(sets)} WHERE tg_id = ?", params)
+    conn.commit()
+    conn.close()
