@@ -2,9 +2,9 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # ---- Клиент ----
 
-def main_menu() -> InlineKeyboardMarkup:
+def main_menu(rules_url: str = "https://telegra.ph/Pravila-ispolzovaniya-servisa-WangLogistic-03-23") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Правила использования", url="https://telegra.ph/Pravila-ispolzovaniya-servisa-WangLogistic-03-23")],
+        [InlineKeyboardButton(text="Правила пользования", url=rules_url)],
         [InlineKeyboardButton(text="Обменять", callback_data="exchange")],
         [InlineKeyboardButton(text="Мои заявки", callback_data="my_orders")],
         [InlineKeyboardButton(text="Профиль", callback_data="profile")],
@@ -33,6 +33,18 @@ def order_detail_kb(order_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Написать менеджеру", callback_data=f"msg:{order_id}")],
         [InlineKeyboardButton(text="Назад", callback_data="my_orders")],
+    ])
+
+
+def bank_select_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="СБЕР", callback_data="bank:СБЕР"),
+         InlineKeyboardButton(text="Т-Банк", callback_data="bank:Т-Банк")],
+        [InlineKeyboardButton(text="АЛЬФА", callback_data="bank:АЛЬФА"),
+         InlineKeyboardButton(text="ВТБ", callback_data="bank:ВТБ")],
+        [InlineKeyboardButton(text="ОЗОН", callback_data="bank:ОЗОН")],
+        [InlineKeyboardButton(text="Другой", callback_data="bank:other")],
+        [InlineKeyboardButton(text="Назад", callback_data="back_menu")],
     ])
 
 
@@ -75,11 +87,69 @@ def manager_take_order_kb(order_id: str) -> InlineKeyboardMarkup:
 
 def manager_status_kb(order_id: str, show_qr: bool = False) -> InlineKeyboardMarkup:
     buttons = [
-        [InlineKeyboardButton(text="В работу", callback_data=f"status:in_progress:{order_id}")],
-        [InlineKeyboardButton(text="Завершить", callback_data=f"status:completed:{order_id}")],
-        [InlineKeyboardButton(text="Отменить", callback_data=f"status:cancelled:{order_id}")],
+        [InlineKeyboardButton(text="Скинуть реквизиты для оплаты", callback_data=f"send_req:{order_id}")],
         [InlineKeyboardButton(text="Написать клиенту", callback_data=f"mgr_msg:{order_id}")],
     ]
     if show_qr:
         buttons.insert(0, [InlineKeyboardButton(text="QR-код клиента", callback_data=f"get_qr:{order_id}")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def manager_bank_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="СБЕР", callback_data="mgr_bank:СБЕР"),
+         InlineKeyboardButton(text="Т-Банк", callback_data="mgr_bank:Т-Банк")],
+        [InlineKeyboardButton(text="АЛЬФА", callback_data="mgr_bank:АЛЬФА"),
+         InlineKeyboardButton(text="ВТБ", callback_data="mgr_bank:ВТБ")],
+        [InlineKeyboardButton(text="ОЗОН", callback_data="mgr_bank:ОЗОН")],
+        [InlineKeyboardButton(text="Другой", callback_data="mgr_bank:other")],
+    ])
+
+
+def help_kb(guide_url: str = "https://telegra.ph/test-cheki-03-23") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📖 Гайд по отправке чеков", url=guide_url)],
+        [InlineKeyboardButton(text="Назад", callback_data="back_menu")],
+    ])
+
+
+def receipt_confirm_kb(guide_url: str = "https://telegra.ph/test-cheki-03-23") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Да, умею", callback_data="receipt_yes")],
+        [InlineKeyboardButton(text="📖 Гайд по чекам", url=guide_url)],
+    ])
+
+
+def confirm_payment_kb(order_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Подтвердить оплату", callback_data=f"paid:{order_id}")],
+    ])
+
+
+def manager_yuan_sent_kb(order_id: str, show_qr: bool = False) -> InlineKeyboardMarkup:
+    buttons = [
+        [InlineKeyboardButton(text="✅ Юани отправлены клиенту", callback_data=f"yuan_sent:{order_id}")],
+        [InlineKeyboardButton(text="Написать клиенту", callback_data=f"mgr_msg:{order_id}")],
+    ]
+    if show_qr:
+        buttons.insert(0, [InlineKeyboardButton(text="QR-код клиента", callback_data=f"get_qr:{order_id}")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def client_yuan_delivery_kb(order_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Подтвердить получение", callback_data=f"yuan_received:{order_id}")],
+        [InlineKeyboardButton(text="❌ Не пришли средства", callback_data=f"yuan_missing:{order_id}")],
+    ])
+
+
+def manager_payment_received_kb(order_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Платёж поступил — уведомить клиента", callback_data=f"pay_confirm:{order_id}")],
+    ])
+
+
+def skip_kb(callback_data: str = "mgr_skip") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Пропустить", callback_data=callback_data)],
+    ])

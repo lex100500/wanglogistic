@@ -48,6 +48,7 @@ def init_db():
             amount_result REAL NOT NULL,
             status TEXT NOT NULL DEFAULT 'new',
             manager_id INTEGER,
+            offer_rate REAL,
             created_at TEXT DEFAULT (datetime('now')),
             updated_at TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (user_id) REFERENCES users(tg_id)
@@ -83,13 +84,32 @@ def init_db():
             source TEXT DEFAULT 'bot',
             created_at TEXT DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
     """)
+    # Миграция: добавляем новые колонки если их нет
+    for col in ("offer_rate REAL", "htx_rate REAL",
+                "usdt_amount REAL", "cny_bought REAL", "margin_cny REAL", "margin_rub REAL"):
+        try:
+            conn.execute(f"ALTER TABLE orders ADD COLUMN {col}")
+        except Exception:
+            pass
     # Заполняем дефолтные курсы
     for pair, vals in DEFAULT_RATES.items():
         conn.execute(
             "INSERT OR IGNORE INTO rates (pair, buy_rate, sell_rate) VALUES (?, ?, ?)",
             (pair, vals["buy"], vals["sell"]),
         )
+    # Дефолтные настройки
+    for key, value in [
+        ("receipt_guide_url", "https://telegra.ph/test-cheki-03-23"),
+        ("main_manager", "bulievich"),
+        ("rules_url", "https://telegra.ph/Pravila-ispolzovaniya-servisa-WangLogistic-03-23"),
+    ]:
+        conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, value))
     conn.commit()
     conn.close()
 
@@ -157,12 +177,12 @@ def get_rate_log(pair: str, limit: int = 20) -> list:
 
 def create_order(user_id: int, currency_from: str, currency_to: str,
                  amount: float, rate: float, amount_result: float,
-                 pay_method: Optional[str] = None) -> int:
+                 pay_method: Optional[str] = None, bank: Optional[str] = None) -> int:
     conn = get_conn()
     cursor = conn.execute(
-        """INSERT INTO orders (user_id, currency_from, currency_to, amount, rate, amount_result, status, pay_method)
-           VALUES (?, ?, ?, ?, ?, ?, 'new', ?)""",
-        (user_id, currency_from, currency_to, amount, rate, amount_result, pay_method),
+        """INSERT INTO orders (user_id, currency_from, currency_to, amount, rate, amount_result, status, pay_method, bank)
+           VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?)""",
+        (user_id, currency_from, currency_to, amount, rate, amount_result, pay_method, bank),
     )
     order_id = cursor.lastrowid
     conn.commit()
@@ -185,6 +205,16 @@ def get_user_active_order(user_id: int):
     ).fetchone()
     conn.close()
     return row
+
+
+def get_user_completed_buy_count(user_id: int) -> int:
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT COUNT(*) as cnt FROM orders WHERE user_id = ? AND currency_from = 'RUB' AND status = 'completed'",
+        (user_id,),
+    ).fetchone()
+    conn.close()
+    return row["cnt"] if row else 0
 
 
 def get_user_orders(user_id: int) -> list:
@@ -287,5 +317,57 @@ def update_profile(tg_id: int, **kwargs):
             params.append(kwargs[key])
     params.append(tg_id)
     conn.execute(f"UPDATE profiles SET {', '.join(sets)} WHERE tg_id = ?", params)
+    conn.commit()
+    conn.close()
+
+
+# ---- Settings ----
+
+def update_order_margin(order_id: str, usdt_amount: float, cny_bought: float,
+                        margin_cny: float, margin_rub: float):
+    conn = get_conn()
+    conn.execute(
+        "UPDATE orders SET usdt_amount=?, cny_bought=?, margin_cny=?, margin_rub=?, updated_at=datetime('now') WHERE id=?",
+        (usdt_amount, cny_bought, margin_cny, margin_rub, order_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_order_htx_rate(order_id: str, htx_rate: float):
+    conn = get_conn()
+    conn.execute(
+        "UPDATE orders SET htx_rate = ?, updated_at = datetime('now') WHERE id = ?",
+        (htx_rate, order_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_order_offer_rate(order_id: str, offer_rate: float):
+    conn = get_conn()
+    conn.execute(
+        "UPDATE orders SET offer_rate = ?, updated_at = datetime('now') WHERE id = ?",
+        (offer_rate, order_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+# ---- Settings ----
+
+def get_setting(key: str, default: str = "") -> str:
+    conn = get_conn()
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    conn.close()
+    return row["value"] if row and row["value"] is not None else default
+
+
+def set_setting(key: str, value: str):
+    conn = get_conn()
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, value),
+    )
     conn.commit()
     conn.close()

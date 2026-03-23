@@ -3,6 +3,7 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
+const https = require('https');
 
 const app = express();
 const PORT = 3001;
@@ -91,6 +92,11 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
 `);
+
+// Migration: profit columns
+for (const col of ['usdt_amount REAL', 'cny_bought REAL', 'margin_cny REAL', 'margin_rub REAL']) {
+  try { db.exec(`ALTER TABLE orders ADD COLUMN ${col}`); } catch (e) {}
+}
 
 // Insert default rates if empty
 const rateCount = db.prepare('SELECT COUNT(*) as cnt FROM rates').get();
@@ -214,6 +220,16 @@ app.get('/api/orders', (req, res) => {
       sql += ' AND o.created_at <= ?';
       params.push(req.query.to + ' 23:59:59');
     }
+    if (req.query.q) {
+      const q = req.query.q.trim();
+      if (/^\d+$/.test(q) && q.length <= 6) {
+        sql += ` AND (o.id = ? OR o.id IN (SELECT DISTINCT order_id FROM messages WHERE text LIKE ?))`;
+        params.push(parseInt(q), '%' + q + '%');
+      } else {
+        sql += ` AND o.id IN (SELECT DISTINCT order_id FROM messages WHERE text LIKE ?)`;
+        params.push('%' + q + '%');
+      }
+    }
 
     sql += ' ORDER BY o.created_at DESC';
 
@@ -271,6 +287,43 @@ app.put('/api/orders/:id', (req, res) => {
   }
 });
 
+// ============ API: Profile / QR proxy ============
+
+app.get('/api/profile/:tg_id', (req, res) => {
+  try {
+    const profile = db.prepare('SELECT wechat_qr, alipay_qr FROM profiles WHERE tg_id = ?').get(req.params.tg_id);
+    res.json(profile || {});
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/tg-file', (req, res) => {
+  const { file_id } = req.query;
+  if (!file_id) return res.status(400).end();
+  const { bot_token } = readConfig();
+  if (!bot_token) return res.status(500).json({ error: 'No bot token' });
+
+  https.get(`https://api.telegram.org/bot${bot_token}/getFile?file_id=${file_id}`, (r) => {
+    let data = '';
+    r.on('data', d => data += d);
+    r.on('end', () => {
+      try {
+        const json = JSON.parse(data);
+        if (!json.ok) return res.status(404).end();
+        const file_path = json.result.file_path;
+        const imgUrl = `https://api.telegram.org/file/bot${bot_token}/${file_path}`;
+        https.get(imgUrl, (imgRes) => {
+          res.setHeader('Content-Type', imgRes.headers['content-type'] || 'image/jpeg');
+          imgRes.pipe(res);
+        }).on('error', () => res.status(500).end());
+      } catch (e) {
+        res.status(500).end();
+      }
+    });
+  }).on('error', () => res.status(500).end());
+});
+
 // ============ API: Managers ============
 
 app.get('/api/managers', (req, res) => {
@@ -281,7 +334,10 @@ app.get('/api/managers', (req, res) => {
         (SELECT COUNT(*) FROM orders WHERE manager_id = m.tg_id AND status = 'completed') as completed_orders,
         (SELECT ROUND(AVG(
           (julianday(updated_at) - julianday(created_at)) * 24 * 60
-        ), 0) FROM orders WHERE manager_id = m.tg_id AND status = 'completed') as avg_time_minutes
+        ), 0) FROM orders WHERE manager_id = m.tg_id AND status = 'completed') as avg_time_minutes,
+        (SELECT ROUND(COALESCE(SUM(margin_rub), 0), 2)
+         FROM orders WHERE manager_id = m.tg_id AND status = 'completed' AND margin_rub IS NOT NULL
+        ) as total_profit
       FROM managers m
       ORDER BY m.added_at DESC
     `).all();
@@ -334,6 +390,34 @@ app.delete('/api/managers/:id', (req, res) => {
   try {
     db.prepare('DELETE FROM managers WHERE tg_id = ?').run(req.params.id);
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/managers/:id/orders', (req, res) => {
+  try {
+    const orders = db.prepare(`
+      SELECT o.id, o.amount, o.currency_from, o.currency_to,
+             o.amount_result, o.rate, o.offer_rate, o.htx_rate,
+             o.usdt_amount, o.cny_bought, o.margin_cny,
+             o.status, o.created_at, o.updated_at,
+             u.first_name as user_name, u.username as user_username
+      FROM orders o
+      LEFT JOIN users u ON o.user_id = u.tg_id
+      WHERE o.manager_id = ?
+      ORDER BY o.created_at DESC
+    `).all(req.params.id);
+
+    const stats = db.prepare(`
+      SELECT
+        COUNT(*) as total_orders,
+        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_orders,
+        ROUND(COALESCE(SUM(CASE WHEN status = 'completed' THEN margin_rub END), 0), 2) as total_profit
+      FROM orders WHERE manager_id = ?
+    `).get(req.params.id);
+
+    res.json({ orders, stats });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -397,7 +481,16 @@ app.put('/api/rates', (req, res) => {
 app.get('/api/settings', (req, res) => {
   try {
     const config = readConfig();
-    res.json({ bot_token: config.bot_token });
+    const getSetting = (key, def) => {
+      const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(key);
+      return row ? row.value : def;
+    };
+    res.json({
+      bot_token: config.bot_token,
+      receipt_guide_url: getSetting('receipt_guide_url', 'https://telegra.ph/test-cheki-03-23'),
+      main_manager: getSetting('main_manager', 'bulievich'),
+      rules_url: getSetting('rules_url', 'https://telegra.ph/Pravila-ispolzovaniya-servisa-WangLogistic-03-23'),
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -405,7 +498,7 @@ app.get('/api/settings', (req, res) => {
 
 app.put('/api/settings', (req, res) => {
   try {
-    const { bot_token } = req.body;
+    const { bot_token, receipt_guide_url } = req.body;
     let needRestart = false;
 
     if (bot_token) {
@@ -416,6 +509,15 @@ app.put('/api/settings', (req, res) => {
         restartBot();
       }
     }
+
+    const upsertSetting = (key, value) => {
+      if (value !== undefined) {
+        db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
+      }
+    };
+    upsertSetting('receipt_guide_url', receipt_guide_url);
+    upsertSetting('main_manager', req.body.main_manager);
+    upsertSetting('rules_url', req.body.rules_url);
 
     res.json({ ok: true, restarted: needRestart });
   } catch (err) {

@@ -8,6 +8,13 @@ from bot import keyboards as kb
 
 router = Router()
 
+DEFAULT_RULES_URL = "https://telegra.ph/Pravila-ispolzovaniya-servisa-WangLogistic-03-23"
+
+
+def _main_menu():
+    return kb.main_menu(db.get_setting("rules_url", DEFAULT_RULES_URL))
+
+
 STATUS_TEXT = {
     "new": "Новая",
     "taken": "Принята",
@@ -20,7 +27,10 @@ PAIR = "RUB/CNY"
 
 
 class OrderFSM(StatesGroup):
+    waiting_receipt_confirm = State()
     waiting_pay_method = State()
+    waiting_bank = State()
+    waiting_bank_custom = State()
     waiting_amount = State()
     waiting_confirm = State()
     waiting_message = State()
@@ -44,7 +54,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
     await message.answer(
         f"Добро пожаловать, {message.from_user.first_name}!\n"
         "Обмен рублей и юаней. Выберите действие:",
-        reply_markup=kb.main_menu(),
+        reply_markup=_main_menu(),
     )
 
 
@@ -53,15 +63,17 @@ async def cmd_start(message: types.Message, state: FSMContext):
 @router.callback_query(F.data == "back_menu")
 async def back_menu(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
-    await callback.message.edit_text("Выберите действие:", reply_markup=kb.main_menu())
+    await callback.message.edit_text("Выберите действие:", reply_markup=_main_menu())
     await callback.answer()
 
 
 @router.callback_query(F.data == "help")
 async def show_help(callback: types.CallbackQuery):
+    guide_url = db.get_setting("receipt_guide_url", "https://telegra.ph/test-cheki-03-23")
+    manager = db.get_setting("main_manager", "bulievich")
     await callback.message.edit_text(
-        "Напишите менеджеру — @bulievich",
-        reply_markup=kb.main_menu(),
+        f"Напишите главному менеджеру — @{manager}",
+        reply_markup=kb.help_kb(guide_url),
     )
     await callback.answer()
 
@@ -77,7 +89,7 @@ async def select_direction(callback: types.CallbackQuery, state: FSMContext):
         await callback.message.edit_text(
             f"У вас уже есть активная заявка #{active['id']} ({st}).\n"
             "Дождитесь её завершения или отмены.",
-            reply_markup=kb.main_menu(),
+            reply_markup=_main_menu(),
         )
         await callback.answer()
         return
@@ -122,25 +134,29 @@ async def direction_selected(callback: types.CallbackQuery, state: FSMContext):
             await callback.answer()
             return
 
-        await state.update_data(cur_from=cur_from, cur_to=cur_to, rate=rate)
+        await state.update_data(
+            cur_from=cur_from, cur_to=cur_to, rate=rate,
+            has_wechat=bool(has_wechat), has_alipay=bool(has_alipay),
+        )
 
-        if has_wechat and has_alipay:
-            # Оба — спрашиваем
-            await state.set_state(OrderFSM.waiting_pay_method)
+        # Проверяем опыт: есть ли завершённые покупки юаней
+        if db.get_user_completed_buy_count(callback.from_user.id) == 0:
+            await state.set_state(OrderFSM.waiting_receipt_confirm)
+            guide_url = db.get_setting("receipt_guide_url", "https://telegra.ph/test-cheki-03-23")
             await callback.message.edit_text(
-                "Куда хотите получить юани?",
-                reply_markup=kb.pay_method_kb(),
+                "⚠️ Прежде чем продолжить — важный вопрос!\n\n"
+                "Вы умеете отправлять чеки об оплате от имени банка?\n\n"
+                "Это необходимо для подтверждения перевода.\n"
+                "Если не знаете как — ознакомьтесь с гайдом по ссылке ниже, "
+                "после чего нажмите «Да, умею».",
+                reply_markup=kb.receipt_confirm_kb(guide_url),
             )
             await callback.answer()
             return
-        else:
-            # Один — авто
-            method = "wechat" if has_wechat else "alipay"
-            await state.update_data(pay_method=method)
-            await state.set_state(OrderFSM.waiting_amount)
-            await callback.message.edit_text(f"Введите сумму в {cur_from}:")
-            await callback.answer()
-            return
+
+        await _continue_buy_flow(callback.message, state, bool(has_wechat), bool(has_alipay))
+        await callback.answer()
+        return
 
     # CNY→RUB: нужна карта для получения рублей
     if cur_from == "CNY":
@@ -155,19 +171,85 @@ async def direction_selected(callback: types.CallbackQuery, state: FSMContext):
             return
 
     await state.set_state(OrderFSM.waiting_amount)
-    await state.update_data(cur_from=cur_from, cur_to=cur_to, rate=rate, pay_method=None)
+    await state.update_data(
+        cur_from=cur_from, cur_to=cur_to, rate=rate, pay_method=None,
+        flow_msg_id=callback.message.message_id,
+        flow_chat_id=callback.message.chat.id,
+    )
     await callback.message.edit_text(f"Введите сумму в {cur_from}:")
+    await callback.answer()
+
+
+async def _continue_buy_flow(message, state: FSMContext, has_wechat: bool, has_alipay: bool):
+    if has_wechat and has_alipay:
+        await state.set_state(OrderFSM.waiting_pay_method)
+        await message.edit_text(
+            "Куда хотите получить юани?",
+            reply_markup=kb.pay_method_kb(),
+        )
+    else:
+        method = "wechat" if has_wechat else "alipay"
+        await state.update_data(pay_method=method)
+        await state.set_state(OrderFSM.waiting_bank)
+        await message.edit_text(
+            "Выберите банк для перевода:",
+            reply_markup=kb.bank_select_kb(),
+        )
+
+
+@router.callback_query(F.data == "receipt_yes", OrderFSM.waiting_receipt_confirm)
+async def receipt_confirmed(callback: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    await _continue_buy_flow(callback.message, state, data["has_wechat"], data["has_alipay"])
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("pay:"), OrderFSM.waiting_pay_method)
 async def pay_method_selected(callback: types.CallbackQuery, state: FSMContext):
-    method = callback.data.split(":", 1)[1]  # wechat или alipay
+    method = callback.data.split(":", 1)[1]
     await state.update_data(pay_method=method)
+    await state.set_state(OrderFSM.waiting_bank)
+    await callback.message.edit_text(
+        "Выберите банк для перевода:",
+        reply_markup=kb.bank_select_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("bank:"), OrderFSM.waiting_bank)
+async def bank_selected(callback: types.CallbackQuery, state: FSMContext):
+    bank = callback.data.split(":", 1)[1]
+    if bank == "other":
+        await state.set_state(OrderFSM.waiting_bank_custom)
+        await callback.message.edit_text("Введите название вашего банка:")
+        await callback.answer()
+        return
+    await state.update_data(
+        bank=bank,
+        flow_msg_id=callback.message.message_id,
+        flow_chat_id=callback.message.chat.id,
+    )
     await state.set_state(OrderFSM.waiting_amount)
     data = await state.get_data()
     await callback.message.edit_text(f"Введите сумму в {data['cur_from']}:")
     await callback.answer()
+
+
+@router.message(OrderFSM.waiting_bank_custom)
+async def bank_custom(message: types.Message, state: FSMContext):
+    bank = message.text.strip()
+    if not bank:
+        await message.answer("Введите название банка:")
+        return
+    data = await state.get_data()
+    sent = await message.answer(f"Введите сумму в {data['cur_from']}:")
+    await state.update_data(
+        bank=bank,
+        bank_custom_msg_id=message.message_id,
+        flow_msg_id=sent.message_id,
+        flow_chat_id=sent.chat.id,
+    )
+    await state.set_state(OrderFSM.waiting_amount)
 
 
 # ---- Обмен: ввод суммы ----
@@ -193,13 +275,23 @@ async def enter_amount(message: types.Message, state: FSMContext):
     else:
         result = round(amount * rate, 2)
 
-    await state.update_data(amount=amount, amount_result=result)
+    await state.update_data(amount=amount, amount_result=result, amount_msg_id=message.message_id)
     await state.set_state(OrderFSM.waiting_confirm)
+
+    bank = data.get("bank")
+    pay_method = data.get("pay_method")
+    extra = ""
+    if bank:
+        extra += f"Банк: {bank}\n"
+    if pay_method:
+        method_name = "WeChat Pay" if pay_method == "wechat" else "Alipay"
+        extra += f"Получение: {method_name}\n"
 
     await message.answer(
         f"Вы отдаёте: {amount} {data['cur_from']}\n"
         f"Курс: {rate}\n"
-        f"Вы получите: {result} {data['cur_to']}\n\n"
+        f"Вы получите: {result} {data['cur_to']}\n"
+        f"{extra}\n"
         "Подтвердить заявку?",
         reply_markup=kb.confirm_order_kb(),
     )
@@ -218,27 +310,48 @@ async def confirm_order(callback: types.CallbackQuery, state: FSMContext, bot: B
         rate=data["rate"],
         amount_result=data["amount_result"],
         pay_method=data.get("pay_method"),
+        bank=data.get("bank"),
     )
-    await state.clear()
+    chat_id = callback.message.chat.id
 
-    await callback.message.edit_text(
-        f"Заявка #{order_id} создана!\n"
+    # Удаляем промежуточные сообщения
+    for msg_id in filter(None, [
+        data.get("flow_msg_id"),
+        data.get("amount_msg_id"),
+        data.get("bank_custom_msg_id"),
+        callback.message.message_id,
+    ]):
+        try:
+            await bot.delete_message(chat_id, msg_id)
+        except Exception:
+            pass
+
+    await state.clear()
+    await callback.answer()
+
+    await bot.send_message(
+        chat_id,
+        f"✅ Заявка #{order_id} создана!\n"
         f"{data['amount']} {data['cur_from']} → {data['amount_result']} {data['cur_to']}\n"
         "Ожидайте — менеджер скоро возьмёт заказ.",
-        reply_markup=kb.main_menu(),
+        reply_markup=_main_menu(),
     )
-    await callback.answer()
 
     # Уведомляем всех менеджеров лично
     managers = db.get_all_active_managers()
     for mgr in managers:
         try:
+            bank_line = f"\nБанк: {data['bank']}" if data.get("bank") else ""
+            method_line = ""
+            pm = data.get("pay_method")
+            if pm:
+                method_line = f"\nПолучение: {'WeChat' if pm == 'wechat' else 'Alipay'}"
             await bot.send_message(
                 mgr["tg_id"],
-                f"🆕 Новая заявка #{order_id}\n"
+                f"Новая заявка #{order_id}\n"
                 f"Клиент: {callback.from_user.first_name} (@{callback.from_user.username or '—'})\n"
                 f"{data['amount']} {data['cur_from']} → {data['amount_result']} {data['cur_to']}\n"
-                f"Курс: {data['rate']}",
+                f"Курс: {data['rate']}{bank_line}{method_line}",
                 reply_markup=kb.manager_take_order_kb(order_id),
             )
         except Exception:
@@ -248,7 +361,7 @@ async def confirm_order(callback: types.CallbackQuery, state: FSMContext, bot: B
 @router.callback_query(F.data == "cancel_order", OrderFSM.waiting_confirm)
 async def cancel_order_creation(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
-    await callback.message.edit_text("Заявка отменена.", reply_markup=kb.main_menu())
+    await callback.message.edit_text("Заявка отменена.", reply_markup=_main_menu())
     await callback.answer()
 
 
@@ -259,7 +372,7 @@ async def my_orders(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
     orders = db.get_user_orders(callback.from_user.id)
     if not orders:
-        await callback.message.edit_text("У вас пока нет заявок.", reply_markup=kb.main_menu())
+        await callback.message.edit_text("У вас пока нет заявок.", reply_markup=_main_menu())
         await callback.answer()
         return
 
@@ -451,6 +564,73 @@ async def save_card_phone(message: types.Message, state: FSMContext):
     )
 
 
+# ---- Подтверждение оплаты клиентом ----
+
+@router.callback_query(F.data.startswith("paid:"))
+async def client_confirm_payment(callback: types.CallbackQuery, bot: Bot):
+    order_id = callback.data.split(":", 1)[1]
+    await callback.message.edit_text(
+        callback.message.text + "\n\n✅ Вы подтвердили оплату.",
+        reply_markup=None,
+    )
+    await callback.answer()
+    await callback.message.answer(
+        "⏳ Сейчас проверим ваш перевод.\nПроверка занимает около 10 минут."
+    )
+
+    # Уведомляем менеджера с кнопкой подтверждения
+    order = db.get_order(order_id)
+    if order and order["manager_id"]:
+        try:
+            await bot.send_message(
+                order["manager_id"],
+                f"💰 Клиент подтвердил оплату по заявке #{order_id}.\n"
+                f"Сумма: {order['amount']} {order['currency_from']}",
+                reply_markup=kb.manager_payment_received_kb(order_id),
+            )
+        except Exception:
+            pass
+
+
+# ---- Подтверждение получения юаней ----
+
+@router.callback_query(F.data.startswith("yuan_received:"))
+async def yuan_received(callback: types.CallbackQuery, bot: Bot):
+    order_id = callback.data.split(":", 1)[1]
+    db.update_order_status(order_id, "completed")
+    await callback.message.edit_text(
+        f"✅ Отлично! Получение юаней по заявке #{order_id} подтверждено.\n"
+        f"Спасибо, что воспользовались нашим сервисом!",
+        reply_markup=kb.order_detail_kb(order_id),
+    )
+    await callback.answer()
+
+    # Уведомляем менеджера
+    order = db.get_order(order_id)
+    if order and order["manager_id"]:
+        try:
+            await bot.send_message(
+                order["manager_id"],
+                f"✅ Клиент подтвердил получение юаней по заявке #{order_id}.\nЗаявка завершена.",
+            )
+        except Exception:
+            pass
+
+
+@router.callback_query(F.data.startswith("yuan_missing:"))
+async def yuan_missing(callback: types.CallbackQuery):
+    order_id = callback.data.split(":", 1)[1]
+    manager = db.get_setting("main_manager", "bulievich")
+    # Сообщение с кнопками остаётся — отправляем новое сообщение ниже
+    await callback.message.answer(
+        f"❌ Средства по заявке #{order_id} не поступили?\n\n"
+        f"Свяжитесь с менеджером через бота.\n"
+        f"Если менеджер не отвечает — напишите главному менеджеру: @{manager}",
+        reply_markup=kb.order_detail_kb(order_id),
+    )
+    await callback.answer()
+
+
 # ---- Relay: клиент → менеджер ----
 
 @router.callback_query(F.data.startswith("msg:"))
@@ -477,7 +657,7 @@ async def start_client_message(callback: types.CallbackQuery, state: FSMContext)
 async def relay_client_to_manager(message: types.Message, state: FSMContext, bot: Bot):
     if message.text and message.text.startswith("/cancel"):
         await state.clear()
-        await message.answer("Отменено.", reply_markup=kb.main_menu())
+        await message.answer("Отменено.", reply_markup=_main_menu())
         return
 
     data = await state.get_data()
@@ -489,12 +669,12 @@ async def relay_client_to_manager(message: types.Message, state: FSMContext, bot
     order = db.get_order(order_id)
     if not order:
         await state.clear()
-        await message.answer("Заявка не найдена.", reply_markup=kb.main_menu())
+        await message.answer("Заявка не найдена.", reply_markup=_main_menu())
         return
 
     db.save_message(order_id, message.from_user.id, message.text or "")
     await state.clear()
-    await message.answer("Сообщение отправлено менеджеру.", reply_markup=kb.main_menu())
+    await message.answer("Сообщение отправлено менеджеру.", reply_markup=_main_menu())
 
     manager_id = order["manager_id"]
     if manager_id:
