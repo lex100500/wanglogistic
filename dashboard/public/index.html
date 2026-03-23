@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WangLogistic — Панель управления</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #0f1923;
+  color: #e0e0e0;
+  display: flex;
+  min-height: 100vh;
+}
+a { color: #d4a843; text-decoration: none; }
+
+/* Sidebar */
+.sidebar {
+  width: 240px;
+  background: #1a2332;
+  border-right: 1px solid #2a3a4a;
+  padding: 20px 0;
+  flex-shrink: 0;
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  overflow-y: auto;
+}
+.sidebar-logo {
+  padding: 0 20px 24px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #d4a843;
+  border-bottom: 1px solid #2a3a4a;
+  margin-bottom: 8px;
+}
+.sidebar-logo span { color: #e0e0e0; font-weight: 400; font-size: 12px; display: block; margin-top: 4px; }
+.nav-item {
+  padding: 12px 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #8899aa;
+  transition: all .15s;
+  border-left: 3px solid transparent;
+}
+.nav-item:hover { background: #243040; color: #e0e0e0; }
+.nav-item.active { background: #1e3045; color: #d4a843; border-left-color: #d4a843; }
+
+/* Main */
+.main {
+  margin-left: 240px;
+  flex: 1;
+  padding: 24px;
+  min-height: 100vh;
+}
+.page { display: none; }
+.page.active { display: block; }
+
+h1 { font-size: 22px; margin-bottom: 20px; color: #fff; }
+h2 { font-size: 17px; margin-bottom: 12px; color: #c0c0c0; }
+
+/* Cards */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
+.card {
+  background: #1a2332;
+  border: 1px solid #2a3a4a;
+  border-radius: 12px;
+  padding: 20px;
+}
+.card-label { font-size: 12px; color: #8899aa; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px; }
+.card-value { font-size: 28px; font-weight: 700; color: #d4a843; }
+.card-sub { font-size: 12px; color: #6a7a8a; margin-top: 4px; }
+
+/* Table */
+.table-wrap { overflow-x: auto; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #1a2332;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #2a3a4a;
+}
+th { background: #16202c; text-align: left; padding: 12px 14px; font-size: 12px; text-transform: uppercase; color: #8899aa; letter-spacing: .5px; white-space: nowrap; }
+td { padding: 10px 14px; border-top: 1px solid #1e2e3e; font-size: 13px; white-space: nowrap; }
+tr:hover td { background: #1e2e3e; }
+
+/* Status badges */
+.badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.badge-new { background: #1e3a5f; color: #5dade2; }
+.badge-taken { background: #3d2e0a; color: #f0a030; }
+.badge-in_progress { background: #3d3a0a; color: #f0d030; }
+.badge-completed { background: #0a3d1a; color: #30f060; }
+.badge-cancelled { background: #3d0a0a; color: #f03030; }
+
+/* Forms & Inputs */
+input, select {
+  background: #0f1923;
+  border: 1px solid #2a3a4a;
+  color: #e0e0e0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+}
+input:focus, select:focus { border-color: #d4a843; }
+.btn {
+  padding: 8px 18px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all .15s;
+}
+.btn-primary { background: #d4a843; color: #0f1923; }
+.btn-primary:hover { background: #e0b854; }
+.btn-danger { background: #5a1a1a; color: #f06060; }
+.btn-danger:hover { background: #6a2a2a; }
+.btn-sm { padding: 5px 12px; font-size: 12px; }
+
+.filters { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+.filters label { font-size: 12px; color: #8899aa; }
+
+/* Manager cards */
+.manager-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.manager-card {
+  background: #1a2332;
+  border: 1px solid #2a3a4a;
+  border-radius: 12px;
+  padding: 20px;
+}
+.manager-card h3 { font-size: 16px; color: #d4a843; margin-bottom: 4px; }
+.manager-card .meta { font-size: 12px; color: #6a7a8a; margin-bottom: 12px; }
+.manager-stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.manager-stat { text-align: center; }
+.manager-stat .val { font-size: 20px; font-weight: 700; color: #e0e0e0; }
+.manager-stat .lbl { font-size: 10px; color: #6a7a8a; text-transform: uppercase; }
+
+/* Rates table */
+.rate-input { width: 100px; text-align: right; }
+
+/* Modal */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,.6);
+  z-index: 100;
+  justify-content: center;
+  align-items: center;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+  background: #1a2332;
+  border: 1px solid #2a3a4a;
+  border-radius: 12px;
+  padding: 24px;
+  min-width: 400px;
+  max-width: 600px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.modal h2 { margin-bottom: 16px; }
+.modal .close-btn { float: right; cursor: pointer; font-size: 20px; color: #8899aa; background: none; border: none; }
+.modal .close-btn:hover { color: #e0e0e0; }
+.form-group { margin-bottom: 14px; }
+.form-group label { display: block; font-size: 12px; color: #8899aa; margin-bottom: 4px; }
+.form-group input { width: 100%; }
+
+/* Messages */
+.messages-list { max-height: 300px; overflow-y: auto; margin: 12px 0; }
+.msg {
+  background: #0f1923;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+}
+.msg .msg-sender { font-size: 11px; color: #d4a843; margin-bottom: 4px; }
+.msg .msg-text { font-size: 13px; }
+.msg .msg-time { font-size: 10px; color: #6a7a8a; margin-top: 4px; text-align: right; }
+
+/* Settings */
+.settings-form .form-group { max-width: 500px; }
+.settings-form input { width: 100%; }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .sidebar { width: 60px; }
+  .sidebar-logo { font-size: 14px; padding: 0 8px 16px; }
+  .sidebar-logo span { display: none; }
+  .nav-item { padding: 12px 8px; font-size: 0; justify-content: center; }
+  .nav-item .nav-icon { font-size: 18px; }
+  .main { margin-left: 60px; padding: 16px; }
+  .cards { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-logo">
+    WangLogistic
+    <span>Панель управления</span>
+  </div>
+  <div class="nav-item active" data-page="overview">
+    <span class="nav-icon">&#9632;</span> Обзор
+  </div>
+  <div class="nav-item" data-page="orders">
+    <span class="nav-icon">&#9776;</span> Заявки
+  </div>
+  <div class="nav-item" data-page="managers">
+    <span class="nav-icon">&#9733;</span> Менеджеры
+  </div>
+  <div class="nav-item" data-page="rates">
+    <span class="nav-icon">&#8645;</span> Курсы
+  </div>
+  <div class="nav-item" data-page="settings">
+    <span class="nav-icon">&#9881;</span> Настройки
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- Overview -->
+  <div class="page active" id="page-overview">
+    <h1>Обзор</h1>
+    <div class="cards" id="stats-cards"></div>
+    <div class="card" style="margin-top: 8px;">
+      <h2>Активность</h2>
+      <div id="chart-placeholder" style="height: 120px; display: flex; align-items: center; justify-content: center; color: #6a7a8a; font-size: 13px;">
+        График активности будет доступен после накопления данных
+      </div>
+    </div>
+  </div>
+
+  <!-- Orders -->
+  <div class="page" id="page-orders">
+    <h1>Заявки</h1>
+    <div class="filters">
+      <div>
+        <label>Статус</label><br>
+        <select id="filter-status">
+          <option value="">Все</option>
+          <option value="new">Новая</option>
+          <option value="taken">Принята</option>
+          <option value="in_progress">В работе</option>
+          <option value="completed">Завершена</option>
+          <option value="cancelled">Отменена</option>
+        </select>
+      </div>
+      <div>
+        <label>Дата от</label><br>
+        <input type="date" id="filter-from">
+      </div>
+      <div>
+        <label>Дата до</label><br>
+        <input type="date" id="filter-to">
+      </div>
+      <div style="align-self: flex-end;">
+        <button class="btn btn-primary btn-sm" onclick="loadOrders()">Применить</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Пользователь</th>
+            <th>Пара</th>
+            <th>Сумма</th>
+            <th>Курс</th>
+            <th>Результат</th>
+            <th>Статус</th>
+            <th>Менеджер</th>
+            <th>Дата</th>
+          </tr>
+        </thead>
+        <tbody id="orders-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Managers -->
+  <div class="page" id="page-managers">
+    <h1>Менеджеры</h1>
+    <div style="margin-bottom: 16px;">
+      <button class="btn btn-primary btn-sm" onclick="showAddManager()">+ Добавить менеджера</button>
+    </div>
+    <div class="manager-cards" id="managers-list"></div>
+  </div>
+
+  <!-- Rates -->
+  <div class="page" id="page-rates">
+    <h1>Курсы валют</h1>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Пара</th>
+            <th>Курс покупки</th>
+            <th>Курс продажи</th>
+            <th>Маржа</th>
+            <th>Обновлено</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="rates-tbody"></tbody>
+      </table>
+    </div>
+    <div style="margin-top: 16px;">
+      <h2>Добавить пару</h2>
+      <div class="filters">
+        <div>
+          <label>Пара (напр. GBP/RUB)</label><br>
+          <input type="text" id="new-pair" placeholder="XXX/YYY">
+        </div>
+        <div>
+          <label>Покупка</label><br>
+          <input type="number" step="0.01" id="new-buy" class="rate-input">
+        </div>
+        <div>
+          <label>Продажа</label><br>
+          <input type="number" step="0.01" id="new-sell" class="rate-input">
+        </div>
+        <div style="align-self: flex-end;">
+          <button class="btn btn-primary btn-sm" onclick="addRate()">Добавить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings -->
+  <div class="page" id="page-settings">
+    <h1>Настройки</h1>
+    <div class="settings-form">
+      <div class="form-group">
+        <label>Токен бота</label>
+        <input type="password" id="set-bot-token" placeholder="123456:ABC...">
+      </div>
+      <div class="form-group">
+        <label>ID группы менеджеров</label>
+        <input type="text" id="set-manager-group" placeholder="-100...">
+      </div>
+      <div class="form-group">
+        <label>Приветственное сообщение</label>
+        <input type="text" id="set-welcome-msg" placeholder="Добро пожаловать!">
+      </div>
+      <button class="btn btn-primary" onclick="saveSettings()">Сохранить</button>
+      <span id="settings-saved" style="margin-left: 12px; color: #30f060; font-size: 13px; display: none;">Сохранено</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- Order Detail Modal -->
+<div class="modal-overlay" id="order-modal">
+  <div class="modal">
+    <button class="close-btn" onclick="closeModal()">&times;</button>
+    <h2>Заявка #<span id="modal-order-id"></span></h2>
+    <div id="modal-order-info"></div>
+    <h2 style="margin-top: 16px;">Сообщения</h2>
+    <div class="messages-list" id="modal-messages"></div>
+    <h2 style="margin-top: 16px;">Управление</h2>
+    <div class="filters">
+      <div>
+        <label>Статус</label><br>
+        <select id="modal-status">
+          <option value="new">Новая</option>
+          <option value="taken">Принята</option>
+          <option value="in_progress">В работе</option>
+          <option value="completed">Завершена</option>
+          <option value="cancelled">Отменена</option>
+        </select>
+      </div>
+      <div style="align-self: flex-end;">
+        <button class="btn btn-primary btn-sm" onclick="updateOrder()">Обновить</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add Manager Modal -->
+<div class="modal-overlay" id="manager-modal">
+  <div class="modal">
+    <button class="close-btn" onclick="closeManagerModal()">&times;</button>
+    <h2>Добавить менеджера</h2>
+    <div class="form-group">
+      <label>Telegram ID</label>
+      <input type="number" id="mgr-tg-id" placeholder="123456789">
+    </div>
+    <div class="form-group">
+      <label>Username</label>
+      <input type="text" id="mgr-username" placeholder="username">
+    </div>
+    <div class="form-group">
+      <label>Имя</label>
+      <input type="text" id="mgr-name" placeholder="Имя">
+    </div>
+    <button class="btn btn-primary" onclick="addManager()">Добавить</button>
+  </div>
+</div>
+
+<script>
+// Navigation
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    item.classList.add('active');
+    const page = item.dataset.page;
+    document.getElementById('page-' + page).classList.add('active');
+    if (page === 'overview') loadStats();
+    if (page === 'orders') loadOrders();
+    if (page === 'managers') loadManagers();
+    if (page === 'rates') loadRates();
+    if (page === 'settings') loadSettings();
+  });
+});
+
+// Helpers
+function formatDate(d) {
+  if (!d) return '—';
+  const dt = new Date(d + 'Z');
+  return dt.toLocaleDateString('ru-RU') + ' ' + dt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+}
+function formatNum(n) {
+  if (n == null) return '—';
+  return Number(n).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+}
+function statusBadge(s) {
+  const labels = { new: 'Новая', taken: 'Принята', in_progress: 'В работе', completed: 'Завершена', cancelled: 'Отменена' };
+  return `<span class="badge badge-${s}">${labels[s] || s}</span>`;
+}
+
+// Stats
+async function loadStats() {
+  try {
+    const r = await fetch('/api/stats');
+    const d = await r.json();
+    document.getElementById('stats-cards').innerHTML = `
+      <div class="card">
+        <div class="card-label">Заявок сегодня</div>
+        <div class="card-value">${d.today.orders}</div>
+        <div class="card-sub">Объём: ${formatNum(d.today.volume)}</div>
+      </div>
+      <div class="card">
+        <div class="card-label">За неделю</div>
+        <div class="card-value">${d.week.orders}</div>
+        <div class="card-sub">Объём: ${formatNum(d.week.volume)}</div>
+      </div>
+      <div class="card">
+        <div class="card-label">За месяц</div>
+        <div class="card-value">${d.month.orders}</div>
+        <div class="card-sub">Объём: ${formatNum(d.month.volume)}</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Активные заявки</div>
+        <div class="card-value">${d.active}</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Конверсия</div>
+        <div class="card-value">${d.conversion_rate}%</div>
+      </div>
+    `;
+  } catch (e) { console.error(e); }
+}
+
+// Orders
+async function loadOrders() {
+  try {
+    const params = new URLSearchParams();
+    const st = document.getElementById('filter-status').value;
+    const fr = document.getElementById('filter-from').value;
+    const to = document.getElementById('filter-to').value;
+    if (st) params.set('status', st);
+    if (fr) params.set('from', fr);
+    if (to) params.set('to', to);
+
+    const r = await fetch('/api/orders?' + params);
+    const orders = await r.json();
+    const tbody = document.getElementById('orders-tbody');
+    if (orders.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#6a7a8a;padding:40px;">Нет заявок</td></tr>';
+      return;
+    }
+    tbody.innerHTML = orders.map(o => `
+      <tr style="cursor:pointer" onclick="showOrder(${o.id})">
+        <td>#${o.id}</td>
+        <td>${o.user_name || o.user_username || o.user_id || '—'}</td>
+        <td>${o.currency_from}/${o.currency_to}</td>
+        <td>${formatNum(o.amount)}</td>
+        <td>${formatNum(o.rate)}</td>
+        <td>${formatNum(o.amount_result)}</td>
+        <td>${statusBadge(o.status)}</td>
+        <td>${o.manager_name || o.manager_username || '—'}</td>
+        <td>${formatDate(o.created_at)}</td>
+      </tr>
+    `).join('');
+  } catch (e) { console.error(e); }
+}
+
+let currentOrderId = null;
+async function showOrder(id) {
+  currentOrderId = id;
+  try {
+    const r = await fetch('/api/orders/' + id);
+    const o = await r.json();
+    document.getElementById('modal-order-id').textContent = o.id;
+    document.getElementById('modal-order-info').innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;">
+        <div><span style="color:#8899aa">Пользователь:</span> ${o.user_name || o.user_username || o.user_id || '—'}</div>
+        <div><span style="color:#8899aa">Пара:</span> ${o.currency_from}/${o.currency_to}</div>
+        <div><span style="color:#8899aa">Сумма:</span> ${formatNum(o.amount)}</div>
+        <div><span style="color:#8899aa">Курс:</span> ${formatNum(o.rate)}</div>
+        <div><span style="color:#8899aa">Результат:</span> ${formatNum(o.amount_result)}</div>
+        <div><span style="color:#8899aa">Менеджер:</span> ${o.manager_name || o.manager_username || '—'}</div>
+        <div><span style="color:#8899aa">Создана:</span> ${formatDate(o.created_at)}</div>
+        <div><span style="color:#8899aa">Обновлена:</span> ${formatDate(o.updated_at)}</div>
+      </div>
+    `;
+    document.getElementById('modal-status').value = o.status;
+
+    const msgs = document.getElementById('modal-messages');
+    if (o.messages && o.messages.length > 0) {
+      msgs.innerHTML = o.messages.map(m => `
+        <div class="msg">
+          <div class="msg-sender">${m.sender_name || m.sender_username || m.sender_id || 'Система'}</div>
+          <div class="msg-text">${escapeHtml(m.text)}</div>
+          <div class="msg-time">${formatDate(m.created_at)}</div>
+        </div>
+      `).join('');
+    } else {
+      msgs.innerHTML = '<div style="color:#6a7a8a;font-size:13px;padding:12px;">Нет сообщений</div>';
+    }
+
+    document.getElementById('order-modal').classList.add('active');
+  } catch (e) { console.error(e); }
+}
+
+function escapeHtml(t) {
+  const d = document.createElement('div');
+  d.textContent = t;
+  return d.innerHTML;
+}
+
+async function updateOrder() {
+  if (!currentOrderId) return;
+  try {
+    await fetch('/api/orders/' + currentOrderId, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: document.getElementById('modal-status').value })
+    });
+    closeModal();
+    loadOrders();
+  } catch (e) { console.error(e); }
+}
+
+function closeModal() { document.getElementById('order-modal').classList.remove('active'); }
+function closeManagerModal() { document.getElementById('manager-modal').classList.remove('active'); }
+
+// Managers
+async function loadManagers() {
+  try {
+    const r = await fetch('/api/managers');
+    const managers = await r.json();
+    const list = document.getElementById('managers-list');
+    if (managers.length === 0) {
+      list.innerHTML = '<div style="color:#6a7a8a">Нет менеджеров</div>';
+      return;
+    }
+    list.innerHTML = managers.map(m => `
+      <div class="manager-card">
+        <h3>${m.first_name || m.username || 'ID: ' + m.tg_id}</h3>
+        <div class="meta">@${m.username || '—'} &middot; ID: ${m.tg_id} &middot; ${m.is_active ? 'Активен' : 'Неактивен'}</div>
+        <div class="manager-stats">
+          <div class="manager-stat">
+            <div class="val">${m.total_orders || 0}</div>
+            <div class="lbl">Заявок</div>
+          </div>
+          <div class="manager-stat">
+            <div class="val">${m.completed_orders || 0}</div>
+            <div class="lbl">Завершено</div>
+          </div>
+          <div class="manager-stat">
+            <div class="val">${m.avg_time_minutes ? m.avg_time_minutes + ' мин' : '—'}</div>
+            <div class="lbl">Ср. время</div>
+          </div>
+        </div>
+        <div style="margin-top: 12px; text-align: right;">
+          <button class="btn btn-danger btn-sm" onclick="removeManager(${m.tg_id})">Удалить</button>
+        </div>
+      </div>
+    `).join('');
+  } catch (e) { console.error(e); }
+}
+
+function showAddManager() { document.getElementById('manager-modal').classList.add('active'); }
+
+async function addManager() {
+  const tg_id = document.getElementById('mgr-tg-id').value;
+  const username = document.getElementById('mgr-username').value;
+  const first_name = document.getElementById('mgr-name').value;
+  if (!tg_id) return alert('Укажите Telegram ID');
+  try {
+    await fetch('/api/managers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tg_id: parseInt(tg_id), username, first_name })
+    });
+    closeManagerModal();
+    document.getElementById('mgr-tg-id').value = '';
+    document.getElementById('mgr-username').value = '';
+    document.getElementById('mgr-name').value = '';
+    loadManagers();
+  } catch (e) { console.error(e); }
+}
+
+async function removeManager(id) {
+  if (!confirm('Удалить менеджера?')) return;
+  try {
+    await fetch('/api/managers/' + id, { method: 'DELETE' });
+    loadManagers();
+  } catch (e) { console.error(e); }
+}
+
+// Rates
+async function loadRates() {
+  try {
+    const r = await fetch('/api/rates');
+    const rates = await r.json();
+    const tbody = document.getElementById('rates-tbody');
+    tbody.innerHTML = rates.map(rt => `
+      <tr>
+        <td><strong>${rt.pair}</strong></td>
+        <td><input type="number" step="0.01" class="rate-input" value="${rt.buy_rate}" id="buy-${rt.pair}"></td>
+        <td><input type="number" step="0.01" class="rate-input" value="${rt.sell_rate}" id="sell-${rt.pair}"></td>
+        <td style="color:#d4a843">${(rt.sell_rate - rt.buy_rate).toFixed(2)}</td>
+        <td style="color:#6a7a8a">${formatDate(rt.updated_at)}</td>
+        <td><button class="btn btn-primary btn-sm" onclick="saveRate('${rt.pair}')">Сохранить</button></td>
+      </tr>
+    `).join('');
+  } catch (e) { console.error(e); }
+}
+
+async function saveRate(pair) {
+  const buy_rate = parseFloat(document.getElementById('buy-' + pair).value);
+  const sell_rate = parseFloat(document.getElementById('sell-' + pair).value);
+  try {
+    await fetch('/api/rates/' + encodeURIComponent(pair), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ buy_rate, sell_rate })
+    });
+    loadRates();
+  } catch (e) { console.error(e); }
+}
+
+async function addRate() {
+  const pair = document.getElementById('new-pair').value.trim().toUpperCase();
+  const buy_rate = parseFloat(document.getElementById('new-buy').value);
+  const sell_rate = parseFloat(document.getElementById('new-sell').value);
+  if (!pair || isNaN(buy_rate) || isNaN(sell_rate)) return alert('Заполните все поля');
+  try {
+    await fetch('/api/rates/' + encodeURIComponent(pair), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ buy_rate, sell_rate })
+    });
+    document.getElementById('new-pair').value = '';
+    document.getElementById('new-buy').value = '';
+    document.getElementById('new-sell').value = '';
+    loadRates();
+  } catch (e) { console.error(e); }
+}
+
+// Settings
+async function loadSettings() {
+  try {
+    const r = await fetch('/api/settings');
+    const s = await r.json();
+    document.getElementById('set-bot-token').value = s.bot_token || '';
+    document.getElementById('set-manager-group').value = s.manager_group_id || '';
+    document.getElementById('set-welcome-msg').value = s.welcome_message || '';
+  } catch (e) { console.error(e); }
+}
+
+async function saveSettings() {
+  try {
+    await fetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        bot_token: document.getElementById('set-bot-token').value,
+        manager_group_id: document.getElementById('set-manager-group').value,
+        welcome_message: document.getElementById('set-welcome-msg').value
+      })
+    });
+    const el = document.getElementById('settings-saved');
+    el.style.display = 'inline';
+    setTimeout(() => el.style.display = 'none', 2000);
+  } catch (e) { console.error(e); }
+}
+
+// Init
+loadStats();
+</script>
+</body>
+</html>

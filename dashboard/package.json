@@ -1,0 +1,13 @@
+{
+  "name": "wanglogistic-dashboard",
+  "version": "1.0.0",
+  "description": "WangLogistic exchange bot dashboard",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "better-sqlite3": "^11.0.0"
+  }
+}
