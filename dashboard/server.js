@@ -11,23 +11,95 @@ const DB_PATH = path.join(__dirname, '..', 'data', 'wanglogistic.db');
 const CONFIG_PATH = path.join(__dirname, '..', 'bot', 'config.py');
 
 const DASH_USER = 'admin';
-const DASH_PASS = 'QGl5h15At08H';
+const DASH_PASS = process.env.DASH_PASS || 'QGl5h15At08H';
+const ALLOWED_ORIGIN = 'https://185-125-103-221.sslip.io';
+const AUDIT_LOG_PATH = path.join(__dirname, '..', 'data', 'audit.log');
+
+// ---- Audit log ----
+function auditLog(ip, action, details = '') {
+  const line = `[${new Date().toISOString()}] ${ip} ${action}${details ? ' | ' + details : ''}\n`;
+  try { fs.appendFileSync(AUDIT_LOG_PATH, line); } catch (e) {}
+}
+
+// ---- Rate limiters (in-memory) ----
+const authFailMap = new Map();   // ip → { count, blockedUntil }
+const reqRateMap  = new Map();   // ip → { count, resetAt }
+
+function getIp(req) {
+  return (req.headers['x-real-ip'] || req.socket.remoteAddress || '').toString();
+}
+
+function isAuthBlocked(ip) {
+  const entry = authFailMap.get(ip);
+  if (!entry) return false;
+  if (entry.blockedUntil && Date.now() < entry.blockedUntil) return true;
+  if (entry.blockedUntil && Date.now() >= entry.blockedUntil) { authFailMap.delete(ip); return false; }
+  return false;
+}
+
+function recordAuthFail(ip) {
+  const now = Date.now();
+  const entry = authFailMap.get(ip) || { count: 0, windowStart: now, blockedUntil: null };
+  if (now - entry.windowStart > 15 * 60 * 1000) { entry.count = 0; entry.windowStart = now; }
+  entry.count++;
+  if (entry.count >= 10) { entry.blockedUntil = now + 30 * 60 * 1000; auditLog(ip, 'AUTH_BLOCKED', `${entry.count} failed attempts`); }
+  authFailMap.set(ip, entry);
+}
+
+function checkReqRate(ip) {
+  const now = Date.now();
+  const entry = reqRateMap.get(ip) || { count: 0, resetAt: now + 60 * 1000 };
+  if (now > entry.resetAt) { entry.count = 0; entry.resetAt = now + 60 * 1000; }
+  entry.count++;
+  reqRateMap.set(ip, entry);
+  return entry.count <= 200;
+}
 
 app.use(express.json());
+
+// Security headers
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Content-Security-Policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' https:; img-src 'self' data: https:;");
+  if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
+  next();
+});
+
+// CORS
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
   res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
 
+// Global rate limit (200 req/min per IP)
 app.use((req, res, next) => {
+  const ip = getIp(req);
+  if (!checkReqRate(ip)) {
+    auditLog(ip, 'RATE_LIMITED', req.path);
+    return res.status(429).json({ error: 'Too many requests' });
+  }
+  next();
+});
+
+// Basic Auth with brute-force protection
+app.use((req, res, next) => {
+  const ip = getIp(req);
+  if (isAuthBlocked(ip)) {
+    return res.status(429).send('Too many failed attempts. Try again in 30 minutes.');
+  }
   const auth = req.headers['authorization'];
   if (auth && auth.startsWith('Basic ')) {
-    const [user, pass] = Buffer.from(auth.slice(6), 'base64').toString().split(':');
+    const decoded = Buffer.from(auth.slice(6), 'base64').toString();
+    const colon = decoded.indexOf(':');
+    const user = decoded.slice(0, colon);
+    const pass = decoded.slice(colon + 1);
     if (user === DASH_USER && pass === DASH_PASS) return next();
   }
+  recordAuthFail(ip);
   res.set('WWW-Authenticate', 'Basic realm="WangLogistic Dashboard"');
   res.status(401).send('Unauthorized');
 });
@@ -376,6 +448,7 @@ app.post('/api/managers', (req, res) => {
       INSERT OR REPLACE INTO managers (tg_id, username, first_name, is_active)
       VALUES (?, ?, ?, 1)
     `).run(tg_id, username || null, first_name || null);
+    auditLog(getIp(req), 'MANAGER_ADD', `tg_id=${tg_id} username=${username}`);
 
     const manager = db.prepare('SELECT * FROM managers WHERE tg_id = ?').get(tg_id);
     res.json(manager);
@@ -409,6 +482,7 @@ app.put('/api/managers/:id', (req, res) => {
 app.delete('/api/managers/:id', (req, res) => {
   try {
     db.prepare('DELETE FROM managers WHERE tg_id = ?').run(req.params.id);
+    auditLog(getIp(req), 'MANAGER_DELETE', `tg_id=${req.params.id}`);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -447,8 +521,9 @@ app.get('/api/managers/:id/orders', (req, res) => {
 
 app.get('/api/users/search', (req, res) => {
   try {
-    const q = (req.query.q || '').trim();
+    const q = (req.query.q || '').trim().slice(0, 50);
     if (!q) return res.json([]);
+    if (!/^[\w@.\- ]+$/i.test(q)) return res.json([]);
     const like = '%' + q + '%';
     const users = db.prepare(`
       SELECT u.tg_id, u.username, u.first_name, u.created_at,
@@ -485,6 +560,7 @@ app.post('/api/users/:id/ban', (req, res) => {
     const tg_id = parseInt(req.params.id);
     const reason = req.body.reason || '';
     db.prepare('INSERT OR REPLACE INTO banned_users (tg_id, reason) VALUES (?, ?)').run(tg_id, reason);
+    auditLog(getIp(req), 'BAN_USER', `tg_id=${tg_id} reason=${reason}`);
 
     // Notify user via bot
     const { bot_token } = readConfig();
@@ -514,7 +590,9 @@ app.post('/api/users/:id/ban', (req, res) => {
 
 app.delete('/api/users/:id/ban', (req, res) => {
   try {
-    db.prepare('DELETE FROM banned_users WHERE tg_id = ?').run(parseInt(req.params.id));
+    const tg_id_unban = parseInt(req.params.id);
+    db.prepare('DELETE FROM banned_users WHERE tg_id = ?').run(tg_id_unban);
+    auditLog(getIp(req), 'UNBAN_USER', `tg_id=${tg_id_unban}`);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -567,6 +645,7 @@ app.put('/api/rates', (req, res) => {
       'INSERT INTO rate_log (pair, buy_rate, sell_rate, source) VALUES (?, ?, ?, ?)'
     ).run(pair, buy_rate, sell_rate, 'dashboard');
 
+    auditLog(getIp(req), 'RATES_CHANGE', `pair=${pair} buy=${buy_rate} sell=${sell_rate}`);
     const rate = db.prepare('SELECT * FROM rates WHERE pair = ?').get(pair);
     res.json(rate);
   } catch (err) {
@@ -584,7 +663,6 @@ app.get('/api/settings', (req, res) => {
       return row ? row.value : def;
     };
     res.json({
-      bot_token: config.bot_token,
       receipt_guide_url: getSetting('receipt_guide_url', 'https://telegra.ph/test-cheki-03-23'),
       main_manager: getSetting('main_manager', 'bulievich'),
       rules_url: getSetting('rules_url', 'https://telegra.ph/Pravila-ispolzovaniya-servisa-WangLogistic-03-23'),
@@ -633,6 +711,7 @@ app.put('/api/settings', (req, res) => {
       upsertSetting('bank_discounts', req.body.bank_discounts);
     }
 
+    auditLog(getIp(req), 'SETTINGS_CHANGE', Object.keys(req.body).filter(k => k !== 'bot_token').join(','));
     res.json({ ok: true, restarted: needRestart });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -657,6 +736,7 @@ app.post('/api/bot/restart', (req, res) => {
   try {
     const ok = restartBot();
     const status = getBotStatus();
+    auditLog(getIp(req), 'BOT_RESTART');
     res.json({ ok, status });
   } catch (err) {
     res.status(500).json({ error: err.message });
