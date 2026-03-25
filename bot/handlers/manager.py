@@ -527,8 +527,16 @@ async def _send_requisites(bot: Bot, state: FSMContext, holder, email, offer_rat
     )
     if holder:
         text += f"Получатель: <code>{html.escape(str(holder))}</code>\n"
-    if email:
+
+    is_tbank = req_bank == "Т-Банк"
+    if is_tbank and email:
         text += f"\n📧 Адрес почты: <code>{html.escape(str(email))}</code>\nОтправьте на неё чек от имени банка.\n"
+    elif not is_tbank:
+        text += (
+            f"\n📎 Прикрепите PDF файл чека или выписку из банка.\n"
+            f"Если появились вопросы — нажмите кнопку «Написать менеджеру».\n"
+        )
+
     text += (
         f"\n⏰ Оплатите в течение 10 минут\n\n"
         f"‼️ УБЕДИТЕСЬ, ЧТО ПЕРЕВОДИТЕ НА ПРАВИЛЬНЫЕ РЕКВИЗИТЫ И ВЕРНЫЙ БАНК!!!"
@@ -536,30 +544,46 @@ async def _send_requisites(bot: Bot, state: FSMContext, holder, email, offer_rat
 
     db.save_message(order_id, msg.from_user.id, text)
 
+    reply_kb = kb.confirm_payment_with_receipt_kb(order_id) if not is_tbank else kb.confirm_payment_kb(order_id)
+
     try:
-        await bot.send_message(user_id, text, parse_mode="HTML", reply_markup=kb.confirm_payment_kb(order_id))
+        await bot.send_message(user_id, text, parse_mode="HTML", reply_markup=reply_kb)
     except Exception:
         pass
 
     await msg.answer(f"✅ Реквизиты отправлены клиенту по заявке #{order_id}.")
 
 
+async def _after_holder(state: FSMContext, holder, msg, is_edit=False):
+    """После ФИО: Т-Банк → спрашиваем почту, другие → сразу курс USDT."""
+    await state.update_data(req_holder=holder)
+    data = await state.get_data()
+    if data.get("req_bank") == "Т-Банк":
+        await state.set_state(ManagerFSM.waiting_req_email)
+        if is_edit:
+            await msg.edit_text("ФИО пропущено.")
+            await _ask_email(msg)
+        else:
+            await _ask_email(msg)
+    else:
+        await state.update_data(req_email=None)
+        await state.set_state(ManagerFSM.waiting_req_offer_rate)
+        if is_edit:
+            await msg.edit_text("Введите курс покупки USDT (для отчётности):")
+        else:
+            await msg.answer("Введите курс покупки USDT (для отчётности):")
+
+
 @router.callback_query(F.data == "mgr_skip_holder", ManagerFSM.waiting_req_holder)
 async def req_holder_skip(callback: types.CallbackQuery, state: FSMContext):
-    await state.update_data(req_holder=None)
-    await state.set_state(ManagerFSM.waiting_req_email)
-    await callback.message.edit_text("ФИО пропущено.")
-    await _ask_email(callback.message)
+    await _after_holder(state, None, callback.message, is_edit=True)
     await callback.answer()
-
 
 
 @router.message(ManagerFSM.waiting_req_holder)
 async def req_holder(message: types.Message, state: FSMContext):
     holder = message.text.strip() if message.text else None
-    await state.update_data(req_holder=holder)
-    await state.set_state(ManagerFSM.waiting_req_email)
-    await _ask_email(message)
+    await _after_holder(state, holder, message, is_edit=False)
 
 
 @router.message(ManagerFSM.waiting_req_email)
