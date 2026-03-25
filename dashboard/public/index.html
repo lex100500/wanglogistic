@@ -1557,7 +1557,7 @@ async function loadRates() {
                 </thead>
                 <tbody>
                   ${logs.map(l => {
-                    const who = l.first_name || l.username || (l.changed_by ? l.changed_by : '—');
+                    const who = l.first_name || (l.username ? '@' + l.username : null) || (l.changed_by ? String(l.changed_by) : '<span style="color:#6b9fff;">Дашборд</span>');
                     const src = l.source === 'bot' ? '<span style="color:#FF8C42;">Бот</span>' : '<span style="color:#6b9fff;">Дашборд</span>';
                     return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
                       <td style="padding:8px 12px;">${formatDate(l.created_at)}</td>

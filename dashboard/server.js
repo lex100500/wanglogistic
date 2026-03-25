@@ -696,9 +696,12 @@ app.get('/api/rates/log', (req, res) => {
     const pair = req.query.pair || 'RUB/CNY';
     const limit = parseInt(req.query.limit) || 20;
     const logs = db.prepare(`
-      SELECT l.*, m.username, m.first_name
+      SELECT l.*,
+        COALESCE(m.first_name, u.first_name) as first_name,
+        COALESCE(m.username, u.username) as username
       FROM rate_log l
       LEFT JOIN managers m ON l.changed_by = m.tg_id
+      LEFT JOIN users u ON l.changed_by = u.tg_id
       WHERE l.pair = ?
       ORDER BY l.created_at DESC LIMIT ?
     `).all(pair, limit);
