@@ -5,7 +5,7 @@ import os
 
 from aiogram import Router, F, types, Bot
 from aiogram.filters import CommandStart, Command
-from aiogram.types import FSInputFile
+from aiogram.types import FSInputFile, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
@@ -64,8 +64,14 @@ class ProfileFSM(StatesGroup):
 
 # ---- /start ----
 
-@router.message(CommandStart())
-async def cmd_start(message: types.Message, state: FSMContext):
+_REPLY_KB = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text="🏠 Главное меню")]],
+    resize_keyboard=True,
+    persistent=True,
+)
+
+
+async def _send_start(message: types.Message, state: FSMContext):
     await state.clear()
     db.upsert_user(message.from_user.id, message.from_user.username, message.from_user.first_name)
     await message.answer_photo(
@@ -74,6 +80,18 @@ async def cmd_start(message: types.Message, state: FSMContext):
                 "Обмен рублей и юаней. Выберите действие:",
         reply_markup=_main_menu(),
     )
+
+
+@router.message(CommandStart())
+async def cmd_start(message: types.Message, state: FSMContext):
+    await message.answer(".", reply_markup=_REPLY_KB)
+    await message.delete()
+    await _send_start(message, state)
+
+
+@router.message(F.text == "🏠 Главное меню")
+async def reply_home(message: types.Message, state: FSMContext):
+    await _send_start(message, state)
 
 
 # ---- Акции ----
