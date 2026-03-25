@@ -778,7 +778,7 @@ async def yuan_sent(callback: types.CallbackQuery, bot: Bot):
     try:
         await bot.send_message(
             order["user_id"],
-            f"💸 Юани отправлены!\n"
+            f"💸 {'Рубли' if order['currency_to'] == 'RUB' else 'Юани'} отправлены!\n"
             f"Сумма: {order['amount_result']} {order['currency_to']}\n\n"
             f"Проверьте поступление средств и подтвердите получение.",
             reply_markup=kb.client_yuan_delivery_kb(order_id),
@@ -787,7 +787,7 @@ async def yuan_sent(callback: types.CallbackQuery, bot: Bot):
         pass
 
     await callback.message.edit_text(
-        callback.message.text + "\n\n✅ Клиент уведомлён об отправке юаней.",
+        callback.message.text + f"\n\n✅ Клиент уведомлён об отправке {'рублей' if order and order['currency_to'] == 'RUB' else 'юаней'}.",
         reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
             [types.InlineKeyboardButton(text="✉️ Написать клиенту", callback_data=f"mgr_msg:{order_id}")],
         ]),
