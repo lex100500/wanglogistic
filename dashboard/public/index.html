@@ -932,6 +932,7 @@ input[type=number] { -moz-appearance: textfield; }
             <input type="checkbox" id="bc-auto-send" style="width:15px;height:15px;accent-color:#4CAF50;">
             Авто-обновление при изменении курса
           </label>
+          <div style="font-size:12px;color:#666;margin-top:4px;">⚡ Эта галочка + "Авто при курсе" у чата = сообщение редактируется автоматически при смене курса.</div>
           <div style="display:flex;gap:8px;margin-top:10px;">
             <button class="btn btn-primary" onclick="saveBroadcastTemplate()" style="flex:1;">💾 Сохранить</button>
             <button class="btn" onclick="previewBroadcast()" style="flex:1;background:#1e3a1e;border:1px solid #2d5a2d;color:#7fff7f;">👁 Просмотр</button>
@@ -2034,6 +2035,14 @@ async function deleteBcChat(id) {
 
 async function toggleBcAutoEdit(id, val) {
   await fetch(`/api/broadcast/chats/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ auto_edit: val }) });
+  if (val) {
+    await saveBroadcastTemplate();
+    const chat = _bcChats.find(c => c.id === id);
+    const endpoint = chat && chat.message_id ? '/api/broadcast/edit' : '/api/broadcast/send';
+    const r = await fetch(endpoint, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ chat_ids: [id] }) }).then(x => x.json());
+    showBcResult(r);
+    await loadBroadcast();
+  }
 }
 
 async function updateChatMsgId(id, message_id) {
