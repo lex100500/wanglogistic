@@ -940,7 +940,18 @@ input[type=number] { -moz-appearance: textfield; }
     <button class="close-btn" onclick="closeManagerOrdersModal()">&times;</button>
     <h2>Заявки: <span id="mgr-orders-name"></span></h2>
     <div id="mgr-orders-stats" style="display:flex;gap:20px;margin:16px 0;flex-wrap:wrap;"></div>
-    <div style="overflow-x:auto;max-height:62vh;overflow-y:auto;">
+    <div class="filters-row" style="margin-bottom:12px;">
+      <input type="text" id="mgr-orders-search" placeholder="🔍 Поиск по ID, клиенту, статусу..." oninput="filterMgrOrders()" style="flex:1;min-width:180px;">
+      <select id="mgr-orders-status" onchange="filterMgrOrders()" style="min-width:140px;">
+        <option value="">Все статусы</option>
+        <option value="new">Новые</option>
+        <option value="taken">Принятые</option>
+        <option value="in_progress">В работе</option>
+        <option value="completed">Завершённые</option>
+        <option value="cancelled">Отменённые</option>
+      </select>
+    </div>
+    <div style="overflow-x:auto;max-height:55vh;overflow-y:auto;">
       <table>
         <thead><tr>
           <th>ID</th><th>Клиент</th><th>RUB</th>
@@ -1376,7 +1387,49 @@ async function removeManager(id) {
 }
 
 // Manager Orders Modal
+let _mgrAllOrders = [];
+
+function renderMgrOrders(orders) {
+  if (!orders.length) {
+    document.getElementById('mgr-orders-tbody').innerHTML =
+      '<tr><td colspan="11" style="text-align:center;padding:40px;color:#a09090;">Нет заявок</td></tr>';
+    return;
+  }
+  document.getElementById('mgr-orders-tbody').innerHTML = orders.map(o => `
+    <tr onclick="showOrder(${o.id})" style="cursor:pointer;">
+      <td style="font-weight:600;">#${o.id}</td>
+      <td>${o.user_name || o.user_username || '\u2014'}</td>
+      <td style="color:#fff;font-weight:600;">${formatNum(o.amount)}</td>
+      <td style="color:#a09090;">${o.offer_rate != null ? formatNum(o.offer_rate) : '\u2014'}</td>
+      <td style="color:#a09090;">${o.htx_rate != null ? formatNum(o.htx_rate) : '\u2014'}</td>
+      <td style="color:#a09090;">${o.usdt_amount != null ? formatNum(o.usdt_amount) : '\u2014'}</td>
+      <td style="color:#a09090;">${o.cny_bought != null ? formatNum(o.cny_bought) : '\u2014'}</td>
+      <td>${formatNum(o.amount_result)}</td>
+      <td style="color:${o.margin_cny > 0 ? '#01B574' : '#a09090'};font-weight:${o.margin_cny != null ? '700' : '400'};">${o.margin_cny != null ? formatNum(o.margin_cny) + ' ¥' : '\u2014'}</td>
+      <td>${statusBadge(o.status)}</td>
+      <td>${formatDate(o.created_at)}</td>
+    </tr>
+  `).join('');
+}
+
+function filterMgrOrders() {
+  const q = (document.getElementById('mgr-orders-search').value || '').trim().toLowerCase();
+  const st = document.getElementById('mgr-orders-status').value;
+  let filtered = _mgrAllOrders;
+  if (st) filtered = filtered.filter(o => o.status === st);
+  if (q) filtered = filtered.filter(o =>
+    String(o.id).includes(q) ||
+    (o.user_name || '').toLowerCase().includes(q) ||
+    (o.user_username || '').toLowerCase().includes(q) ||
+    (o.status || '').toLowerCase().includes(q)
+  );
+  renderMgrOrders(filtered);
+}
+
 async function showManagerOrders(managerId, managerName) {
+  _mgrAllOrders = [];
+  document.getElementById('mgr-orders-search').value = '';
+  document.getElementById('mgr-orders-status').value = '';
   document.getElementById('mgr-orders-name').textContent = managerName;
   document.getElementById('mgr-orders-tbody').innerHTML =
     '<tr><td colspan="11" style="text-align:center;padding:40px;color:#a09090;">Загрузка...</td></tr>';
@@ -1391,27 +1444,9 @@ async function showManagerOrders(managerId, managerName) {
       <div class="manager-stat"><div class="val" style="color:#01B574;">${stats.total_profit ? formatNum(stats.total_profit) + ' ₽' : '\u2014'}</div><div class="lbl">Суммарная прибыль</div></div>
     `;
 
-    if (!orders.length) {
-      document.getElementById('mgr-orders-tbody').innerHTML =
-        '<tr><td colspan="11" style="text-align:center;padding:40px;color:#a09090;">Нет заявок</td></tr>';
-      return;
-    }
-
-    document.getElementById('mgr-orders-tbody').innerHTML = orders.map(o => `
-      <tr onclick="showOrder(${o.id})" style="cursor:pointer;">
-        <td style="font-weight:600;">#${o.id}</td>
-        <td>${o.user_name || o.user_username || '\u2014'}</td>
-        <td style="color:#fff;font-weight:600;">${formatNum(o.amount)}</td>
-        <td style="color:#a09090;">${o.offer_rate != null ? formatNum(o.offer_rate) : '\u2014'}</td>
-        <td style="color:#a09090;">${o.htx_rate != null ? formatNum(o.htx_rate) : '\u2014'}</td>
-        <td style="color:#a09090;">${o.usdt_amount != null ? formatNum(o.usdt_amount) : '\u2014'}</td>
-        <td style="color:#a09090;">${o.cny_bought != null ? formatNum(o.cny_bought) : '\u2014'}</td>
-        <td>${formatNum(o.amount_result)}</td>
-        <td style="color:${o.margin_cny > 0 ? '#01B574' : '#a09090'};font-weight:${o.margin_cny != null ? '700' : '400'};">${o.margin_cny != null ? formatNum(o.margin_cny) + ' ¥' : '\u2014'}</td>
-        <td>${statusBadge(o.status)}</td>
-        <td>${formatDate(o.created_at)}</td>
-      </tr>
-    `).join('');
+    _mgrAllOrders = orders;
+    renderMgrOrders(orders);
+    if (!orders.length) return;
   } catch (e) { console.error(e); }
 }
 
