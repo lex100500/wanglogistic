@@ -112,7 +112,8 @@ def init_db():
     for col in ("offer_rate REAL", "htx_rate REAL",
                 "usdt_amount REAL", "cny_bought REAL", "margin_cny REAL", "margin_rub REAL",
                 "terms_confirmed INTEGER DEFAULT 0",
-                "manager_msg_id INTEGER", "manager_chat_id INTEGER"):
+                "manager_msg_id INTEGER", "manager_chat_id INTEGER",
+                "pay_method TEXT"):
         try:
             conn.execute(f"ALTER TABLE orders ADD COLUMN {col}")
         except Exception:
