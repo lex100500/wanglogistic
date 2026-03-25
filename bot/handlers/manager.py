@@ -671,8 +671,9 @@ async def manager_confirm_payment(callback: types.CallbackQuery, state: FSMConte
 
     await state.set_state(ManagerFSM.waiting_htx_rate)
     await state.update_data(htx_order_id=order_id)
+    currency = "CNY" if order["currency_from"] == "RUB" else "RUB"
     await callback.message.answer(
-        f"Введите курс покупки RUB на HTX (для отчётности):",
+        f"Введите курс покупки {currency} на HTX (для отчётности):",
     )
 
 
