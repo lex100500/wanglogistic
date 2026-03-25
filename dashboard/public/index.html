@@ -928,11 +928,7 @@ input[type=number] { -moz-appearance: textfield; }
             </table>
           </div>
           <textarea id="bc-template" rows="10" style="width:100%;font-family:monospace;font-size:13px;resize:vertical;background:#1a1a2e;color:#e0e0e0;border:1px solid #2d5a2d;border-radius:6px;padding:10px;box-sizing:border-box;" placeholder="📈 Актуальный курс WangLogistic..."></textarea>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;color:#ccc;font-size:13px;margin-top:10px;">
-            <input type="checkbox" id="bc-auto-send" style="width:15px;height:15px;accent-color:#4CAF50;">
-            Авто-обновление при изменении курса
-          </label>
-          <div style="font-size:12px;color:#666;margin-top:4px;">⚡ Эта галочка + "Авто при курсе" у чата = сообщение редактируется автоматически при смене курса.</div>
+          <div style="font-size:12px;color:#666;margin-top:6px;">⚡ Чаты с включённым "Авто при курсе" — обновляются автоматически при смене курса.</div>
           <div style="display:flex;gap:8px;margin-top:10px;">
             <button class="btn btn-primary" onclick="saveBroadcastTemplate()" style="flex:1;">💾 Сохранить</button>
             <button class="btn" onclick="previewBroadcast()" style="flex:1;background:#1e3a1e;border:1px solid #2d5a2d;color:#7fff7f;">👁 Просмотр</button>
@@ -1947,7 +1943,6 @@ async function loadBroadcast() {
   ]);
   _bcChats = chats;
   document.getElementById('bc-template').value = tmpl.template || '';
-  document.getElementById('bc-auto-send').checked = !!tmpl.auto_send;
   renderBcChats();
 }
 
@@ -1983,15 +1978,14 @@ function renderBcChats() {
   `).join('');
 }
 
-async function saveBroadcastTemplate() {
+async function saveBroadcastTemplate(silent = false) {
   const template = document.getElementById('bc-template').value;
-  const auto_send = document.getElementById('bc-auto-send').checked;
-  await fetch('/api/broadcast/template', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ template, auto_send }) });
-  showToast('Шаблон сохранён');
+  await fetch('/api/broadcast/template', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ template, auto_send: true }) });
+  if (!silent) showToast('Шаблон сохранён');
 }
 
 async function previewBroadcast() {
-  await saveBroadcastTemplate();
+  await saveBroadcastTemplate(true);
   const r = await fetch('/api/broadcast/send', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ chat_ids: [] }) }).then(x => x.json());
   const el = document.getElementById('bc-preview');
   el.style.display = 'block';
@@ -2036,7 +2030,7 @@ async function deleteBcChat(id) {
 async function toggleBcAutoEdit(id, val) {
   await fetch(`/api/broadcast/chats/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ auto_edit: val }) });
   if (val) {
-    await saveBroadcastTemplate();
+    await saveBroadcastTemplate(true);
     const chat = _bcChats.find(c => c.id === id);
     const endpoint = chat && chat.message_id ? '/api/broadcast/edit' : '/api/broadcast/send';
     const r = await fetch(endpoint, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ chat_ids: [id] }) }).then(x => x.json());
@@ -2051,27 +2045,27 @@ async function updateChatMsgId(id, message_id) {
 }
 
 async function broadcastSendAll() {
-  await saveBroadcastTemplate();
+  await saveBroadcastTemplate(true);
   const r = await fetch('/api/broadcast/send', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({}) }).then(x => x.json());
   showBcResult(r);
   await loadBroadcast();
 }
 
 async function broadcastEditAll() {
-  await saveBroadcastTemplate();
+  await saveBroadcastTemplate(true);
   const r = await fetch('/api/broadcast/edit', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({}) }).then(x => x.json());
   showBcResult(r);
 }
 
 async function broadcastSendOne(id) {
-  await saveBroadcastTemplate();
+  await saveBroadcastTemplate(true);
   const r = await fetch('/api/broadcast/send', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ chat_ids: [id] }) }).then(x => x.json());
   showBcResult(r);
   await loadBroadcast();
 }
 
 async function broadcastEditOne(id) {
-  await saveBroadcastTemplate();
+  await saveBroadcastTemplate(true);
   const r = await fetch('/api/broadcast/edit', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ chat_ids: [id] }) }).then(x => x.json());
   showBcResult(r);
 }

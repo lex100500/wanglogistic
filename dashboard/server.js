@@ -258,8 +258,6 @@ function tgRequest(method, params) {
 }
 
 async function autoBroadcast() {
-  const autoSend = (db.prepare("SELECT value FROM settings WHERE key='broadcast_auto_send'").get() || {}).value === '1';
-  if (!autoSend) return;
   const template = (db.prepare("SELECT value FROM settings WHERE key='broadcast_template'").get() || {}).value || '';
   if (!template) return;
   const text = resolveBroadcastText(template);
