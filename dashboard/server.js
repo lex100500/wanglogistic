@@ -10,6 +10,9 @@ const PORT = 3001;
 const DB_PATH = path.join(__dirname, '..', 'data', 'wanglogistic.db');
 const CONFIG_PATH = path.join(__dirname, '..', 'bot', 'config.py');
 
+const DASH_USER = 'admin';
+const DASH_PASS = 'QGl5h15At08H';
+
 app.use(express.json());
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -18,6 +21,17 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
+
+app.use((req, res, next) => {
+  const auth = req.headers['authorization'];
+  if (auth && auth.startsWith('Basic ')) {
+    const [user, pass] = Buffer.from(auth.slice(6), 'base64').toString().split(':');
+    if (user === DASH_USER && pass === DASH_PASS) return next();
+  }
+  res.set('WWW-Authenticate', 'Basic realm="WangLogistic Dashboard"');
+  res.status(401).send('Unauthorized');
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Ensure data directory exists
