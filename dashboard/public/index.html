@@ -395,16 +395,19 @@ input[type=number] { -moz-appearance: textfield; }
 .manager-meta { font-size: 12px; color: #a09090; margin-top: 2px; }
 .manager-stats {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr;
-  gap: 12px;
-  padding: 16px;
-  background: rgba(255,107,53,0.03);
-  border-radius: 14px;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
   margin-bottom: 14px;
 }
-.manager-stat { text-align: center; }
-.manager-stat .val { font-size: 22px; font-weight: 700; }
-.manager-stat .lbl { font-size: 10px; color: #a09090; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+.manager-stat {
+  text-align: center;
+  padding: 12px 8px;
+  background: rgba(255,107,53,0.04);
+  border-radius: 12px;
+  border: 1px solid rgba(255,107,53,0.08);
+}
+.manager-stat .val { font-size: 20px; font-weight: 700; line-height: 1.2; }
+.manager-stat .lbl { font-size: 10px; color: #a09090; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 3px; }
 .manager-card-footer { display: flex; justify-content: flex-end; gap: 8px; }
 
 /* Rate card */
@@ -1316,7 +1319,7 @@ async function loadManagers() {
             <div class="lbl">Ср. время</div>
           </div>
           <div class="manager-stat">
-            <div class="val" style="color:#01B574;font-size:15px;white-space:nowrap;">${m.total_profit ? formatNum(m.total_profit) + ' ₽' : '\u2014'}</div>
+            <div class="val" style="color:${m.total_profit > 0 ? '#01B574' : m.total_profit < 0 ? '#FF4C4C' : '#a09090'};font-size:16px;">${m.total_profit != null ? formatNum(m.total_profit) + ' ₽' : '\u2014'}</div>
             <div class="lbl">Прибыль</div>
           </div>
         </div>
