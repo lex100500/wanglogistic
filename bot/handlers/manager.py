@@ -530,7 +530,7 @@ async def _send_requisites(bot: Bot, state: FSMContext, holder, email, offer_rat
 
     is_tbank = req_bank == "Т-Банк"
     if is_tbank and email:
-        text += f"\n📧 Адрес почты: <code>{html.escape(str(email))}</code>\nОтправьте на неё чек от имени банка.\n"
+        text += f"\n📧 Адрес почты: <code>{html.escape(str(email))}</code>\n⚠️ Отправьте на неё чек ОТ ИМЕНИ БАНКА!!!\n"
     elif not is_tbank:
         text += (
             f"\n📎 Прикрепите PDF файл чека или выписку из банка.\n"
