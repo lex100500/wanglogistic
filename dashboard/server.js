@@ -756,6 +756,7 @@ app.get('/api/settings', (req, res) => {
       return row ? row.value : def;
     };
     res.json({
+      bot_token: config.bot_token,
       receipt_guide_url: getSetting('receipt_guide_url', 'https://telegra.ph/test-cheki-03-23'),
       main_manager: getSetting('main_manager', 'bulievich'),
       rules_url: getSetting('rules_url', 'https://telegra.ph/Pravila-ispolzovaniya-servisa-WangLogistic-03-23'),
