@@ -393,6 +393,8 @@ async def qr_confirm_send(callback: types.CallbackQuery, state: FSMContext, bot:
         f"‼️ Убедитесь, что сканируете правильный QR-код!"
     )
 
+    db.save_message(order_id, callback.from_user.id, "[QR-код для оплаты]", file_id=file_id)
+
     try:
         await bot.send_photo(
             user_id,
