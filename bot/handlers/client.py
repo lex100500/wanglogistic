@@ -434,16 +434,6 @@ async def enter_amount(message: types.Message, state: FSMContext):
 
     data = await state.get_data()
 
-    # Проверка минимальной суммы для RUB→CNY
-    if data.get("cur_from") == "RUB":
-        try:
-            min_amount = float(db.get_setting("min_buy_amount", "0"))
-        except Exception:
-            min_amount = 0
-        if min_amount > 0 and amount < min_amount:
-            await message.answer(f"Минимальная сумма для покупки юаней: {int(min_amount)} RUB")
-            return
-
     base_rate = data["rate"]
     bank_discount = data.get("bank_discount", 0.0)
 
@@ -467,6 +457,24 @@ async def enter_amount(message: types.Message, state: FSMContext):
         result = round(amount / rate, 2)
     else:
         result = round(amount * rate, 2)
+
+    # Проверка минимальных сумм
+    if data["cur_from"] == "RUB":
+        try:
+            min_cny = float(db.get_setting("min_buy_amount", "0"))
+        except Exception:
+            min_cny = 0
+        if min_cny > 0 and result < min_cny:
+            await message.answer(f"Минимальная сумма покупки: {int(min_cny)} CNY\nВы получите только {result} CNY — введите большую сумму:")
+            return
+    elif data["cur_from"] == "CNY":
+        try:
+            min_cny_sell = float(db.get_setting("min_sell_amount", "0"))
+        except Exception:
+            min_cny_sell = 0
+        if min_cny_sell > 0 and amount < min_cny_sell:
+            await message.answer(f"Минимальная сумма продажи: {int(min_cny_sell)} CNY\nВведите сумму не менее {int(min_cny_sell)} CNY:")
+            return
 
     await state.update_data(amount=amount, amount_result=result, rate=rate, amount_msg_id=message.message_id)
     await state.set_state(OrderFSM.waiting_confirm)

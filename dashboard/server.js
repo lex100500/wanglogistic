@@ -577,6 +577,7 @@ app.get('/api/settings', (req, res) => {
       promotions_text: getSetting('promotions_text', ''),
       volume_discounts: getSetting('volume_discounts', '[]'),
       min_buy_amount: getSetting('min_buy_amount', '0'),
+      min_sell_amount: getSetting('min_sell_amount', '0'),
       bank_discounts: getSetting('bank_discounts', '[]'),
     });
   } catch (err) {
@@ -612,6 +613,7 @@ app.put('/api/settings', (req, res) => {
       upsertSetting('volume_discounts', req.body.volume_discounts);
     }
     if (req.body.min_buy_amount !== undefined) upsertSetting('min_buy_amount', req.body.min_buy_amount);
+    if (req.body.min_sell_amount !== undefined) upsertSetting('min_sell_amount', req.body.min_sell_amount);
     if (req.body.bank_discounts !== undefined) {
       try { JSON.parse(req.body.bank_discounts); } catch(e) { return res.status(400).json({ error: 'Невалидный JSON в скидках банков' }); }
       upsertSetting('bank_discounts', req.body.bank_discounts);

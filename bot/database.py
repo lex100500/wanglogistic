@@ -143,6 +143,7 @@ def init_db():
         ("promotions_text", "📈 Актуальный курс RUB→CNY\n\nОт 400 юаней — {тир:400} рублей\nОт 2000💸 — {тир:2000}💸\nОт 8000💸 — {тир:8000}💸\n\n💳 При оплате с Т-Банка скидка −{банк:Т-Банк} рублей на курс"),
         ("volume_discounts", '[{"min_cny": 400, "discount": 0.1}, {"min_cny": 2000, "discount": 0.2}, {"min_cny": 8000, "discount": 0.3}]'),
         ("min_buy_amount", "400"),
+        ("min_sell_amount", "0"),
         ("bank_discounts", '[{"bank": "СБЕР", "discount": 0}, {"bank": "Т-Банк", "discount": 0.1}, {"bank": "АЛЬФА", "discount": 0}, {"bank": "ВТБ", "discount": 0}, {"bank": "ОЗОН", "discount": 0}]'),
     ]:
         conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, value))

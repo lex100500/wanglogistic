@@ -881,9 +881,15 @@ input[type=number] { -moz-appearance: textfield; }
         </div>
 
         <div class="form-group" style="margin-top:16px;">
-          <label>💰 Минимальная сумма покупки юаней (RUB)</label>
+          <label>💰 Минимальная сумма покупки юаней (CNY)</label>
           <div style="font-size:12px;color:#888;margin-bottom:6px;">0 = без ограничений</div>
           <input type="number" id="set-min-buy-amount" min="0" step="1" style="width:180px;background:#1a1a2e;color:#e0e0e0;border:1px solid #333;border-radius:6px;padding:6px 10px;" placeholder="400">
+        </div>
+
+        <div class="form-group" style="margin-top:16px;">
+          <label>💴 Минимальная сумма продажи юаней (CNY)</label>
+          <div style="font-size:12px;color:#888;margin-bottom:6px;">0 = без ограничений</div>
+          <input type="number" id="set-min-sell-amount" min="0" step="1" style="width:180px;background:#1a1a2e;color:#e0e0e0;border:1px solid #333;border-radius:6px;padding:6px 10px;" placeholder="0">
         </div>
 
         <div class="form-group" style="margin-top:16px;">
@@ -1674,6 +1680,7 @@ async function loadSettings() {
     document.getElementById('set-promotions-text').value = s.promotions_text || '';
     try { renderVolRows(JSON.parse(s.volume_discounts || '[]')); } catch(e) { renderVolRows([]); }
     document.getElementById('set-min-buy-amount').value = s.min_buy_amount || '0';
+    document.getElementById('set-min-sell-amount').value = s.min_sell_amount || '0';
     try { renderBankRows(JSON.parse(s.bank_discounts || '[]')); } catch(e) { renderBankRows([]); }
     loadBotStatus();
   } catch (e) { console.error(e); }
@@ -1777,6 +1784,7 @@ async function saveBotSettings() {
         promotions_text: document.getElementById('set-promotions-text').value,
         volume_discounts: JSON.stringify(getVolTiers()),
         min_buy_amount: document.getElementById('set-min-buy-amount').value,
+        min_sell_amount: document.getElementById('set-min-sell-amount').value,
         bank_discounts: JSON.stringify(getBankDiscounts()),
       })
     });
