@@ -1395,7 +1395,6 @@ async function loadManagers() {
     const managers = await r.json();
     const list = document.getElementById('managers-list');
     const summaryEl = document.getElementById('mgr-period-summary');
-    const range = getMgrDateRange();
     if (range) {
       const totalOrders = managers.reduce((s, m) => s + (m.period_orders || 0), 0);
       const totalProfit = managers.reduce((s, m) => s + (m.period_profit || 0), 0);
