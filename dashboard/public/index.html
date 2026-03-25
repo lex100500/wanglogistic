@@ -17,9 +17,13 @@ body {
   display: flex;
 }
 
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+::-webkit-scrollbar { width: 0; height: 0; }
+* { scrollbar-width: none; }
+
+#set-promotions-text::-webkit-scrollbar { width: 5px; }
+#set-promotions-text::-webkit-scrollbar-track { background: #12121f; border-radius: 0 6px 6px 0; }
+#set-promotions-text::-webkit-scrollbar-thumb { background: #2d5a2d; border-radius: 3px; }
+#set-promotions-text::-webkit-scrollbar-thumb:hover { background: #3d7a3d; }
 
 /* Sidebar */
 .sidebar {
@@ -275,6 +279,36 @@ input:focus, select:focus, textarea:focus {
 input::placeholder, textarea::placeholder { color: rgba(255,255,255,0.25); }
 select option { background: #1a0a0a; color: #fff; }
 
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; appearance: none; }
+input[type=number] { -moz-appearance: textfield; }
+
+.num-wrap { position: relative; display: inline-flex; align-items: stretch; }
+.num-wrap input[type=number] { border-radius: 12px 0 0 12px !important; flex: 1; }
+.num-spin-btns {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(255,107,53,0.2);
+  border-left: none;
+  border-radius: 0 12px 12px 0;
+  overflow: hidden;
+}
+.num-spin-btns button {
+  flex: 1;
+  width: 28px;
+  background: rgba(30,12,12,0.5);
+  border: none;
+  color: #FF8C42;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s;
+  font-family: inherit;
+}
+.num-spin-btns button:first-child { border-bottom: 1px solid rgba(255,107,53,0.15); }
+.num-spin-btns button:hover { background: rgba(229,62,0,0.2); color: #fff; }
+
 .btn {
   padding: 10px 22px;
   border: none;
@@ -303,6 +337,9 @@ select option { background: #1a0a0a; color: #fff; }
 }
 .btn-danger:hover { background: rgba(227,26,26,0.25); }
 .btn-sm { padding: 8px 16px; font-size: 12px; }
+.btn-primary:active { transform: translateY(1px); box-shadow: 0 2px 8px rgba(229,62,0,0.3); }
+@keyframes spin { from { display:inline-block; transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.btn-spinning { animation: spin 0.6s linear; }
 
 .filters {
   display: flex;
@@ -592,8 +629,17 @@ select option { background: #1a0a0a; color: #fff; }
 
   <!-- Overview -->
   <div class="page active" id="page-overview">
-    <div class="page-title">Обзор</div>
-    <div class="page-subtitle">Статистика и последние заявки</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:6px;">
+      <div>
+        <div class="page-title" style="margin-bottom:0;">Обзор</div>
+        <div class="page-subtitle" style="margin-bottom:0;">Статистика и последние заявки</div>
+      </div>
+      <a href="https://t.me/tuimaada_trade_bot" target="_blank" class="btn btn-primary" style="font-size:15px;padding:13px 28px;text-decoration:none;letter-spacing:0.3px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248-1.97 9.289c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L8.32 14.617l-2.96-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.496.969z"/></svg>
+        Открыть бота
+      </a>
+    </div>
+    <div style="margin-bottom:28px;"></div>
     <div class="stats-row" id="stats-cards"></div>
     <div class="glass-card">
       <h2>Последние заявки</h2>
@@ -645,6 +691,7 @@ select option { background: #1a0a0a; color: #fff; }
           <input type="text" id="filter-search" placeholder="ID заявки или номер карты..." style="min-width:220px;" onkeydown="if(event.key==='Enter')loadOrders()">
         </div>
         <button class="btn btn-primary btn-sm" onclick="loadOrders()" style="margin-bottom:1px;">Применить</button>
+        <button class="btn btn-primary btn-sm" id="refresh-btn" onclick="refreshOrders()" style="margin-bottom:1px;">🔄 Обновить</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -660,7 +707,7 @@ select option { background: #1a0a0a; color: #fff; }
               <th>USDT/¥</th>
               <th>USDT</th>
               <th>CNY куплено</th>
-              <th>Маржа ₽</th>
+              <th>Маржа ¥</th>
               <th>Статус</th>
               <th>Менеджер</th>
               <th>Дата</th>
@@ -733,6 +780,22 @@ select option { background: #1a0a0a; color: #fff; }
       </div>
     </div>
 
+    <!-- Users: search + ban -->
+    <div class="glass-card">
+      <h2>Пользователи</h2>
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+        <input type="text" id="user-search-input" placeholder="Поиск по нику, имени или ID..." style="flex:1;min-width:200px;" oninput="searchUsers()">
+        <input type="number" id="ban-by-id-input" placeholder="ID для бана" style="width:160px;">
+        <input type="text" id="ban-reason-input" placeholder="Причина (опционально)" style="width:200px;">
+        <button class="btn btn-danger" onclick="banByIdDirect()">🚫 Забанить</button>
+      </div>
+      <div id="user-search-results" style="margin-bottom:20px;"></div>
+      <div>
+        <div style="font-size:13px;font-weight:600;color:#a09090;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">Заблокированные</div>
+        <div id="banned-users-list"></div>
+      </div>
+    </div>
+
     <!-- Bot settings -->
     <div class="glass-card">
       <h2>Настройки бота</h2>
@@ -749,6 +812,91 @@ select option { background: #1a0a0a; color: #fff; }
           <label>Ссылка на гайд по чекам</label>
           <input type="url" id="set-receipt-guide-url" placeholder="https://telegra.ph/..." style="width:100%;">
         </div>
+        <div class="form-group" style="margin-top:12px;">
+          <label>🎁 Текст акций (кнопка «Акции» в боте)</label>
+          <div style="background:#1e2a1e;border:1px solid #2d5a2d;border-radius:8px;padding:12px 14px;margin-bottom:10px;font-size:13px;line-height:1.7;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <span style="color:#6fcf6f;font-weight:600;">📌 Переменные курса</span>
+              <button onclick="togglePromoHint(this)" style="background:none;border:1px solid #2d5a2d;color:#6fcf6f;border-radius:4px;padding:1px 8px;cursor:pointer;font-size:12px;">скрыть</button>
+            </div>
+            <div id="promo-hint-body">
+              <div style="color:#ccc;margin-bottom:8px;">
+                Используй <code style="background:#2a3a2a;padding:1px 5px;border-radius:3px;color:#7fff7f;">{тир:N}</code> — подставляет итоговый курс для тира с порогом N юаней из таблицы ниже.<br>
+                Число порога пиши обычным текстом, переменная только для курса.
+              </div>
+              <table style="border-collapse:collapse;width:100%;">
+                <tr>
+                  <td style="padding:3px 10px 3px 0;color:#7fff7f;font-family:monospace;">{курс}</td>
+                  <td style="color:#aaa;">актуальный курс RUB/CNY</td>
+                </tr>
+                <tr>
+                  <td style="padding:3px 10px 3px 0;color:#7fff7f;font-family:monospace;">{тир:400}</td>
+                  <td style="color:#aaa;">курс − скидка тира 400 CNY</td>
+                </tr>
+                <tr>
+                  <td style="padding:3px 10px 3px 0;color:#7fff7f;font-family:monospace;">{тир:2000}</td>
+                  <td style="color:#aaa;">курс − скидка тира 2000 CNY</td>
+                </tr>
+                <tr>
+                  <td style="padding:3px 10px 3px 0;color:#7fff7f;font-family:monospace;">{тир:8000}</td>
+                  <td style="color:#aaa;">курс − скидка тира 8000 CNY</td>
+                </tr>
+                <tr>
+                  <td style="padding:3px 10px 3px 0;color:#7fff7f;font-family:monospace;">{банк:Т-Банк}</td>
+                  <td style="color:#aaa;">размер скидки банка Т-Банк</td>
+                </tr>
+                <tr>
+                  <td style="padding:3px 10px 3px 0;color:#7fff7f;font-family:monospace;">{банк:СБЕР}</td>
+                  <td style="color:#aaa;">размер скидки банка СБЕР</td>
+                </tr>
+              </table>
+              <div style="color:#888;margin-top:10px;font-size:12px;">
+                ✅ <code style="color:#aaa;">От 400 CNY — {тир:400} руб</code><br>
+                ✅ <code style="color:#aaa;">С Т-Банком — {банк:Т-Банк} руб</code><br>
+                ❌ <code style="color:#e07;">От {тир:400} CNY — {тир:400} руб</code> (оба заменятся курсом)<br>
+                <span style="color:#666;margin-top:4px;display:block;">⚡ При изменении скидки в таблице тиров — курс в акциях обновляется автоматически.</span>
+              </div>
+            </div>
+          </div>
+          <textarea id="set-promotions-text" rows="12" style="width:100%;font-family:monospace;font-size:13px;resize:vertical;background:#1a1a2e;color:#e0e0e0;border:1px solid #2d5a2d;border-radius:6px;padding:10px;box-sizing:border-box;scrollbar-width:thin;scrollbar-color:#2d5a2d transparent;" placeholder="📈 Актуальный курс..."></textarea>
+        </div>
+
+        <div class="form-group" style="margin-top:16px;">
+          <label>📦 Объёмные скидки (применяются к курсу при RUB→CNY)</label>
+          <div style="font-size:12px;color:#888;margin-bottom:8px;">Скидка от суммы в CNY. Стакается с Т-Банком. Тиры сортируются автоматически.</div>
+          <table style="width:100%;border-collapse:collapse;" id="vol-discount-table">
+            <thead>
+              <tr>
+                <th style="text-align:left;padding:4px 8px;color:#888;font-size:12px;font-weight:400;">От (CNY)</th>
+                <th style="text-align:left;padding:4px 8px;color:#888;font-size:12px;font-weight:400;">Скидка к курсу</th>
+                <th style="width:40px;"></th>
+              </tr>
+            </thead>
+            <tbody id="vol-discount-rows"></tbody>
+          </table>
+          <button onclick="addVolRow()" style="margin-top:8px;background:none;border:1px solid #2d5a2d;color:#6fcf6f;border-radius:4px;padding:4px 12px;cursor:pointer;font-size:13px;">+ Добавить тир</button>
+        </div>
+
+        <div class="form-group" style="margin-top:16px;">
+          <label>💰 Минимальная сумма покупки юаней (RUB)</label>
+          <div style="font-size:12px;color:#888;margin-bottom:6px;">0 = без ограничений</div>
+          <input type="number" id="set-min-buy-amount" min="0" step="1" style="width:180px;background:#1a1a2e;color:#e0e0e0;border:1px solid #333;border-radius:6px;padding:6px 10px;" placeholder="400">
+        </div>
+
+        <div class="form-group" style="margin-top:16px;">
+          <label>🏦 Скидки по банкам (применяются при RUB→CNY)</label>
+          <div style="font-size:12px;color:#888;margin-bottom:8px;">Стакается с объёмными скидками. 0 = без скидки.</div>
+          <table style="width:100%;border-collapse:collapse;">
+            <thead>
+              <tr>
+                <th style="text-align:left;padding:4px 8px;color:#888;font-size:12px;font-weight:400;">Банк</th>
+                <th style="text-align:left;padding:4px 8px;color:#888;font-size:12px;font-weight:400;">Скидка к курсу</th>
+              </tr>
+            </thead>
+            <tbody id="bank-discount-rows"></tbody>
+          </table>
+        </div>
+
         <div style="margin-top: 16px;">
           <button class="btn btn-primary" onclick="saveBotSettings()">Сохранить</button>
         </div>
@@ -794,7 +942,7 @@ select option { background: #1a0a0a; color: #fff; }
         <thead><tr>
           <th>ID</th><th>Клиент</th><th>RUB</th>
           <th>₽/USDT</th><th>USDT/¥</th><th>USDT</th>
-          <th>CNY куплено</th><th>CNY отдано</th><th>Маржа ₽</th>
+          <th>CNY куплено</th><th>CNY отдано</th><th>Маржа ¥</th>
           <th>Статус</th><th>Дата</th>
         </tr></thead>
         <tbody id="mgr-orders-tbody"></tbody>
@@ -844,7 +992,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
     if (page === 'orders') loadOrders();
     if (page === 'managers') loadManagers();
     if (page === 'rates') loadRates();
-    if (page === 'settings') loadSettings();
+    if (page === 'settings') { loadSettings(); loadBannedUsers(); }
     if (window.innerWidth <= 768) {
       document.getElementById('sidebar').classList.remove('open');
       document.getElementById('sidebar-overlay').classList.remove('active');
@@ -977,6 +1125,16 @@ function navigateToOrder(id) {
 }
 
 // Orders
+async function refreshOrders() {
+  const btn = document.getElementById('refresh-btn');
+  const icon = btn.querySelector('span') || btn;
+  btn.disabled = true;
+  btn.innerHTML = '<span style="display:inline-block;animation:spin 0.6s linear infinite">🔄</span> Обновить';
+  await loadOrders();
+  btn.disabled = false;
+  btn.innerHTML = '🔄 Обновить';
+}
+
 async function loadOrders() {
   try {
     const params = new URLSearchParams();
@@ -1008,7 +1166,7 @@ async function loadOrders() {
         <td style="color:#a09090;">${o.htx_rate != null ? formatNum(o.htx_rate) : '—'}</td>
         <td style="color:#a09090;">${o.usdt_amount != null ? formatNum(o.usdt_amount) : '—'}</td>
         <td style="color:#a09090;">${o.cny_bought != null ? formatNum(o.cny_bought) : '—'}</td>
-        <td style="color:${o.margin_rub > 0 ? '#01B574' : '#a09090'};font-weight:${o.margin_rub != null ? '700' : '400'};">${o.margin_rub != null ? formatNum(o.margin_rub) + ' ₽' : '—'}</td>
+        <td style="color:${o.margin_cny > 0 ? '#01B574' : '#a09090'};font-weight:${o.margin_cny != null ? '700' : '400'};">${o.margin_cny != null ? formatNum(o.margin_cny) + ' ¥' : '—'}</td>
         <td>${statusBadge(o.status)}</td>
         <td>${o.manager_name || o.manager_username || '\u2014'}</td>
         <td>${formatDate(o.created_at)}</td>
@@ -1035,7 +1193,7 @@ async function showOrder(id) {
         ${o.htx_rate != null ? `<div class="order-info-item"><div class="label">Курс HTX (USDT/¥)</div><div class="value">${formatNum(o.htx_rate)}</div></div>` : ''}
         ${o.usdt_amount != null ? `<div class="order-info-item"><div class="label">USDT куплено</div><div class="value">${formatNum(o.usdt_amount)}</div></div>` : ''}
         ${o.cny_bought != null ? `<div class="order-info-item"><div class="label">CNY куплено</div><div class="value">${formatNum(o.cny_bought)}</div></div>` : ''}
-        ${o.margin_rub != null ? `<div class="order-info-item"><div class="label">Маржа</div><div class="value" style="color:#01B574;font-weight:700;">${formatNum(o.margin_rub)} ₽</div></div>` : ''}
+        ${o.margin_cny != null ? `<div class="order-info-item"><div class="label">Маржа</div><div class="value" style="color:#01B574;font-weight:700;">${formatNum(o.margin_cny)} ¥</div></div>` : ''}
         <div class="order-info-item"><div class="label">Менеджер</div><div class="value">${o.manager_name || o.manager_username || '\u2014'}</div></div>
         <div class="order-info-item"><div class="label">Создана</div><div class="value">${formatDate(o.created_at)}</div></div>
         <div class="order-info-item"><div class="label">Обновлена</div><div class="value">${formatDate(o.updated_at)}</div></div>
@@ -1079,10 +1237,13 @@ async function showOrder(id) {
         const role = isManager ? '👔 Менеджер' : isClient ? '👤 Клиент' : '⚙️ Система';
         const senderName = m.sender_name || m.sender_username || '';
         const label = senderName ? `${role} (${senderName})` : role;
+        const body = m.file_id
+          ? `<div class="msg-photo"><img src="/api/tg-file?file_id=${encodeURIComponent(m.file_id)}" onclick="openQrLightbox(this.src)" style="max-width:220px;max-height:220px;border-radius:10px;cursor:zoom-in;display:block;margin-bottom:4px;">${m.text && m.text !== '[фото]' ? `<div style="margin-top:4px;">${escapeHtml(m.text)}</div>` : ''}</div>`
+          : `<div class="msg-text">${escapeHtml(m.text)}</div>`;
         return `
         <div class="msg ${cls}">
           <div class="msg-sender">${label}</div>
-          <div class="msg-text">${escapeHtml(m.text)}</div>
+          ${body}
           <div class="msg-time">${formatDate(m.created_at)}</div>
         </div>`;
       }).join('');
@@ -1243,7 +1404,7 @@ async function showManagerOrders(managerId, managerName) {
         <td style="color:#a09090;">${o.usdt_amount != null ? formatNum(o.usdt_amount) : '\u2014'}</td>
         <td style="color:#a09090;">${o.cny_bought != null ? formatNum(o.cny_bought) : '\u2014'}</td>
         <td>${formatNum(o.amount_result)}</td>
-        <td style="color:${o.margin_rub > 0 ? '#01B574' : '#a09090'};font-weight:${o.margin_rub != null ? '700' : '400'};">${o.margin_rub != null ? formatNum(o.margin_rub) + ' ₽' : '\u2014'}</td>
+        <td style="color:${o.margin_cny > 0 ? '#01B574' : '#a09090'};font-weight:${o.margin_cny != null ? '700' : '400'};">${o.margin_cny != null ? formatNum(o.margin_cny) + ' ¥' : '\u2014'}</td>
         <td>${statusBadge(o.status)}</td>
         <td>${formatDate(o.created_at)}</td>
       </tr>
@@ -1373,6 +1534,97 @@ async function addRate() {
 }
 
 // Settings
+// Users search + ban
+let userSearchTimer = null;
+function searchUsers() {
+  clearTimeout(userSearchTimer);
+  userSearchTimer = setTimeout(doUserSearch, 300);
+}
+
+async function doUserSearch() {
+  const q = document.getElementById('user-search-input').value.trim();
+  const el = document.getElementById('user-search-results');
+  if (!q) { el.innerHTML = ''; return; }
+  try {
+    const r = await fetch(api('/api/users/search?q=' + encodeURIComponent(q)));
+    const users = await r.json();
+    if (!users.length) { el.innerHTML = '<div style="color:#a09090;font-size:13px;">Ничего не найдено</div>'; return; }
+    el.innerHTML = `<table style="width:100%;border-collapse:collapse;">
+      <thead><tr>
+        <th>ID</th><th>Имя</th><th>@username</th><th>Заявок</th><th>Статус</th><th></th>
+      </tr></thead>
+      <tbody>${users.map(u => `
+        <tr>
+          <td style="font-family:monospace;color:#FFB547;">${u.tg_id}</td>
+          <td>${u.first_name || '—'}</td>
+          <td>${u.username ? '@' + u.username : '—'}</td>
+          <td>${u.orders_count}</td>
+          <td>${u.is_banned ? '<span style="color:#E31A1A;font-weight:600;">Забанен</span>' : '<span style="color:#01B574;">Активен</span>'}</td>
+          <td>${u.is_banned
+            ? `<button class="btn btn-sm" onclick="unbanUser(${u.tg_id})" style="background:rgba(1,181,116,0.1);color:#01B574;">Разбанить</button>`
+            : `<button class="btn btn-sm btn-danger" onclick="banUser(${u.tg_id}, '${(u.first_name||'').replace(/'/g,"\\'")}')">Забанить</button>`
+          }</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+  } catch(e) { console.error(e); }
+}
+
+async function loadBannedUsers() {
+  try {
+    const r = await fetch(api('/api/users/banned'));
+    const users = await r.json();
+    const el = document.getElementById('banned-users-list');
+    if (!users.length) { el.innerHTML = '<div style="color:#a09090;font-size:13px;">Нет заблокированных</div>'; return; }
+    el.innerHTML = `<table style="width:100%;border-collapse:collapse;">
+      <thead><tr><th>ID</th><th>Имя</th><th>@username</th><th>Причина</th><th>Дата</th><th></th></tr></thead>
+      <tbody>${users.map(u => `
+        <tr>
+          <td style="font-family:monospace;color:#FFB547;">${u.tg_id}</td>
+          <td>${u.first_name || '—'}</td>
+          <td>${u.username ? '@' + u.username : '—'}</td>
+          <td style="color:#a09090;">${u.reason || '—'}</td>
+          <td style="color:#a09090;font-size:12px;">${u.banned_at ? u.banned_at.slice(0,16) : '—'}</td>
+          <td><button class="btn btn-sm" onclick="unbanUser(${u.tg_id})" style="background:rgba(1,181,116,0.1);color:#01B574;">Разбанить</button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+  } catch(e) { console.error(e); }
+}
+
+async function banUser(tg_id, name) {
+  const reason = prompt(`Причина бана для ${name || tg_id} (можно пусто):`, '') ;
+  if (reason === null) return;
+  await fetch(api('/api/users/' + tg_id + '/ban'), {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ reason })
+  });
+  showToast('Пользователь ' + tg_id + ' заблокирован');
+  doUserSearch();
+  loadBannedUsers();
+}
+
+async function banByIdDirect() {
+  const tg_id = parseInt(document.getElementById('ban-by-id-input').value);
+  if (!tg_id) return showToast('Укажите ID', 'rgba(227,26,26,0.9)');
+  const reason = document.getElementById('ban-reason-input').value.trim();
+  await fetch(api('/api/users/' + tg_id + '/ban'), {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ reason })
+  });
+  document.getElementById('ban-by-id-input').value = '';
+  document.getElementById('ban-reason-input').value = '';
+  showToast('Пользователь ' + tg_id + ' заблокирован');
+  loadBannedUsers();
+}
+
+async function unbanUser(tg_id) {
+  await fetch(api('/api/users/' + tg_id + '/ban'), { method: 'DELETE' });
+  showToast('Пользователь ' + tg_id + ' разблокирован');
+  doUserSearch();
+  loadBannedUsers();
+}
+
 async function loadSettings() {
   try {
     const r = await fetch(api('/api/settings'));
@@ -1381,8 +1633,79 @@ async function loadSettings() {
     document.getElementById('set-main-manager').value = s.main_manager || '';
     document.getElementById('set-rules-url').value = s.rules_url || '';
     document.getElementById('set-receipt-guide-url').value = s.receipt_guide_url || '';
+    document.getElementById('set-promotions-text').value = s.promotions_text || '';
+    try { renderVolRows(JSON.parse(s.volume_discounts || '[]')); } catch(e) { renderVolRows([]); }
+    document.getElementById('set-min-buy-amount').value = s.min_buy_amount || '0';
+    try { renderBankRows(JSON.parse(s.bank_discounts || '[]')); } catch(e) { renderBankRows([]); }
     loadBotStatus();
   } catch (e) { console.error(e); }
+}
+
+function renderVolRows(tiers) {
+  const tbody = document.getElementById('vol-discount-rows');
+  tbody.innerHTML = '';
+  (tiers || []).forEach((t, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="padding:4px 8px;"><input type="number" min="0" step="1" value="${t.min_cny}" style="width:100%;background:#1a1a2e;color:#e0e0e0;border:1px solid #333;border-radius:4px;padding:4px 6px;" data-idx="${i}" data-field="min_cny"></td>
+      <td style="padding:4px 8px;"><input type="number" min="0" step="0.01" value="${t.discount}" style="width:100%;background:#1a1a2e;color:#e0e0e0;border:1px solid #333;border-radius:4px;padding:4px 6px;" data-idx="${i}" data-field="discount"></td>
+      <td style="padding:4px 8px;text-align:center;"><button onclick="removeVolRow(${i})" style="background:none;border:none;color:#e05;cursor:pointer;font-size:16px;">×</button></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function getVolTiers() {
+  const rows = document.querySelectorAll('#vol-discount-rows tr');
+  const tiers = [];
+  rows.forEach(tr => {
+    const min_cny = parseFloat(tr.querySelector('[data-field="min_cny"]').value);
+    const discount = parseFloat(tr.querySelector('[data-field="discount"]').value);
+    if (!isNaN(min_cny) && !isNaN(discount)) tiers.push({ min_cny, discount });
+  });
+  return tiers.sort((a, b) => a.min_cny - b.min_cny);
+}
+
+function addVolRow() {
+  const tiers = getVolTiers();
+  tiers.push({ min_cny: 0, discount: 0 });
+  renderVolRows(tiers);
+}
+
+function removeVolRow(idx) {
+  const tiers = getVolTiers();
+  tiers.splice(idx, 1);
+  renderVolRows(tiers);
+}
+
+const BANKS = ['СБЕР', 'Т-Банк', 'АЛЬФА', 'ВТБ', 'ОЗОН'];
+
+function renderBankRows(discounts) {
+  const map = {};
+  (discounts || []).forEach(d => { map[d.bank] = d.discount; });
+  const tbody = document.getElementById('bank-discount-rows');
+  tbody.innerHTML = '';
+  BANKS.forEach(bank => {
+    const val = map[bank] !== undefined ? map[bank] : 0;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="padding:4px 8px;color:#e0e0e0;">${bank}</td>
+      <td style="padding:4px 8px;"><input type="number" min="0" step="0.01" value="${val}" data-bank="${bank}" style="width:100%;background:#1a1a2e;color:#e0e0e0;border:1px solid #333;border-radius:4px;padding:4px 6px;"></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function getBankDiscounts() {
+  return BANKS.map(bank => ({
+    bank,
+    discount: parseFloat(document.querySelector(`[data-bank="${bank}"]`)?.value || 0)
+  }));
+}
+
+function togglePromoHint(btn) {
+  const body = document.getElementById('promo-hint-body');
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? '' : 'none';
+  btn.textContent = hidden ? 'скрыть' : 'показать';
 }
 
 async function saveSettings() {
@@ -1413,6 +1736,10 @@ async function saveBotSettings() {
         main_manager: document.getElementById('set-main-manager').value.trim(),
         rules_url: document.getElementById('set-rules-url').value.trim(),
         receipt_guide_url: document.getElementById('set-receipt-guide-url').value.trim(),
+        promotions_text: document.getElementById('set-promotions-text').value,
+        volume_discounts: JSON.stringify(getVolTiers()),
+        min_buy_amount: document.getElementById('set-min-buy-amount').value,
+        bank_discounts: JSON.stringify(getBankDiscounts()),
       })
     });
     showToast('Настройки бота сохранены');
@@ -1477,6 +1804,33 @@ document.addEventListener('keydown', (e) => {
     document.querySelectorAll('.modal-overlay.active').forEach(m => m.classList.remove('active'));
   }
 });
+
+// Custom number spinners
+function initNumSpinners() {
+  document.querySelectorAll('input[type=number]:not(.num-init)').forEach(input => {
+    input.classList.add('num-init');
+    const wrap = document.createElement('div');
+    wrap.className = 'num-wrap';
+    wrap.style.width = input.style.width || '';
+    input.style.width = '100%';
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    const btns = document.createElement('div');
+    btns.className = 'num-spin-btns';
+    btns.innerHTML = '<button type="button">▲</button><button type="button">▼</button>';
+    wrap.appendChild(btns);
+    const [up, down] = btns.querySelectorAll('button');
+    const step = parseFloat(input.step) || 1;
+    up.addEventListener('click', () => { input.stepUp(); input.dispatchEvent(new Event('input')); input.dispatchEvent(new Event('change')); });
+    down.addEventListener('click', () => { input.stepDown(); input.dispatchEvent(new Event('input')); input.dispatchEvent(new Event('change')); });
+  });
+}
+
+// Re-run after dynamic content renders
+const _origRenderVolRows = typeof renderVolRows !== 'undefined' ? renderVolRows : null;
+const spinnerObserver = new MutationObserver(() => initNumSpinners());
+spinnerObserver.observe(document.body, { childList: true, subtree: true });
+initNumSpinners();
 
 // Init + auto-refresh
 loadStats();

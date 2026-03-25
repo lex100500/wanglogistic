@@ -93,10 +93,15 @@ db.exec(`
   );
 `);
 
-// Migration: profit columns
+// Migration: profit columns + banned_users
 for (const col of ['usdt_amount REAL', 'cny_bought REAL', 'margin_cny REAL', 'margin_rub REAL']) {
   try { db.exec(`ALTER TABLE orders ADD COLUMN ${col}`); } catch (e) {}
 }
+db.exec(`CREATE TABLE IF NOT EXISTS banned_users (
+  tg_id INTEGER PRIMARY KEY,
+  reason TEXT,
+  banned_at TEXT DEFAULT (datetime('now'))
+);`);
 
 // Insert default rates if empty
 const rateCount = db.prepare('SELECT COUNT(*) as cnt FROM rates').get();
@@ -222,12 +227,13 @@ app.get('/api/orders', (req, res) => {
     }
     if (req.query.q) {
       const q = req.query.q.trim();
+      const like = '%' + q + '%';
       if (/^\d+$/.test(q) && q.length <= 6) {
-        sql += ` AND (o.id = ? OR o.id IN (SELECT DISTINCT order_id FROM messages WHERE text LIKE ?))`;
-        params.push(parseInt(q), '%' + q + '%');
+        sql += ` AND (o.id = ? OR u.first_name LIKE ? OR u.username LIKE ? OR m.first_name LIKE ? OR m.username LIKE ? OR o.id IN (SELECT DISTINCT order_id FROM messages WHERE text LIKE ?))`;
+        params.push(parseInt(q), like, like, like, like, like);
       } else {
-        sql += ` AND o.id IN (SELECT DISTINCT order_id FROM messages WHERE text LIKE ?)`;
-        params.push('%' + q + '%');
+        sql += ` AND (u.first_name LIKE ? OR u.username LIKE ? OR m.first_name LIKE ? OR m.username LIKE ? OR o.id IN (SELECT DISTINCT order_id FROM messages WHERE text LIKE ?))`;
+        params.push(like, like, like, like, like);
       }
     }
 
@@ -423,6 +429,84 @@ app.get('/api/managers/:id/orders', (req, res) => {
   }
 });
 
+// ============ API: Users ============
+
+app.get('/api/users/search', (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    if (!q) return res.json([]);
+    const like = '%' + q + '%';
+    const users = db.prepare(`
+      SELECT u.tg_id, u.username, u.first_name, u.created_at,
+             (SELECT COUNT(*) FROM orders WHERE user_id = u.tg_id) as orders_count,
+             (b.tg_id IS NOT NULL) as is_banned,
+             b.reason as ban_reason
+      FROM users u
+      LEFT JOIN banned_users b ON u.tg_id = b.tg_id
+      WHERE u.username LIKE ? OR u.first_name LIKE ? OR CAST(u.tg_id AS TEXT) LIKE ?
+      ORDER BY u.created_at DESC LIMIT 30
+    `).all(like, like, like);
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/users/banned', (req, res) => {
+  try {
+    const users = db.prepare(`
+      SELECT b.tg_id, b.reason, b.banned_at, u.username, u.first_name
+      FROM banned_users b
+      LEFT JOIN users u ON b.tg_id = u.tg_id
+      ORDER BY b.banned_at DESC
+    `).all();
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/users/:id/ban', (req, res) => {
+  try {
+    const tg_id = parseInt(req.params.id);
+    const reason = req.body.reason || '';
+    db.prepare('INSERT OR REPLACE INTO banned_users (tg_id, reason) VALUES (?, ?)').run(tg_id, reason);
+
+    // Notify user via bot
+    const { bot_token } = readConfig();
+    const mainManager = (db.prepare("SELECT value FROM settings WHERE key = 'main_manager'").get() || {}).value || '';
+    if (bot_token && tg_id) {
+      const reasonLine = reason ? `\nПричина: <b>${reason}</b>` : '';
+      const managerLine = mainManager ? `\n\nЕсли считаете, что это ошибка — напишите главному менеджеру: @${mainManager}` : '';
+      const text = `🚫 Вы были заблокированы в боте WangLogistic.${reasonLine}${managerLine}`;
+      const postData = JSON.stringify({ chat_id: tg_id, text, parse_mode: 'HTML' });
+      const options = {
+        hostname: 'api.telegram.org',
+        path: `/bot${bot_token}/sendMessage`,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
+      };
+      const tgReq = https.request(options);
+      tgReq.on('error', () => {});
+      tgReq.write(postData);
+      tgReq.end();
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/users/:id/ban', (req, res) => {
+  try {
+    db.prepare('DELETE FROM banned_users WHERE tg_id = ?').run(parseInt(req.params.id));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ============ API: Rates ============
 
 app.get('/api/rates', (req, res) => {
@@ -490,6 +574,10 @@ app.get('/api/settings', (req, res) => {
       receipt_guide_url: getSetting('receipt_guide_url', 'https://telegra.ph/test-cheki-03-23'),
       main_manager: getSetting('main_manager', 'bulievich'),
       rules_url: getSetting('rules_url', 'https://telegra.ph/Pravila-ispolzovaniya-servisa-WangLogistic-03-23'),
+      promotions_text: getSetting('promotions_text', ''),
+      volume_discounts: getSetting('volume_discounts', '[]'),
+      min_buy_amount: getSetting('min_buy_amount', '0'),
+      bank_discounts: getSetting('bank_discounts', '[]'),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -518,6 +606,16 @@ app.put('/api/settings', (req, res) => {
     upsertSetting('receipt_guide_url', receipt_guide_url);
     upsertSetting('main_manager', req.body.main_manager);
     upsertSetting('rules_url', req.body.rules_url);
+    upsertSetting('promotions_text', req.body.promotions_text);
+    if (req.body.volume_discounts !== undefined) {
+      try { JSON.parse(req.body.volume_discounts); } catch(e) { return res.status(400).json({ error: 'Невалидный JSON в тирах скидок' }); }
+      upsertSetting('volume_discounts', req.body.volume_discounts);
+    }
+    if (req.body.min_buy_amount !== undefined) upsertSetting('min_buy_amount', req.body.min_buy_amount);
+    if (req.body.bank_discounts !== undefined) {
+      try { JSON.parse(req.body.bank_discounts); } catch(e) { return res.status(400).json({ error: 'Невалидный JSON в скидках банков' }); }
+      upsertSetting('bank_discounts', req.body.bank_discounts);
+    }
 
     res.json({ ok: true, restarted: needRestart });
   } catch (err) {

@@ -1,0 +1,1205 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WangLogistic — Панель управления</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  background: linear-gradient(159.02deg, #0f123b 14.25%, #090d2e 56.45%, #020515 86.14%);
+  color: #fff;
+  min-height: 100vh;
+  display: flex;
+}
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+
+/* Sidebar */
+.sidebar {
+  width: 250px;
+  background: linear-gradient(111.84deg, rgba(6,11,38,0.94) 59.3%, rgba(26,31,55,0.5) 100%);
+  border-radius: 0 20px 20px 0;
+  margin: 16px 0 16px 16px;
+  padding: 24px 16px;
+  flex-shrink: 0;
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  display: flex;
+  flex-direction: column;
+  z-index: 50;
+  transition: transform 0.3s ease;
+}
+
+.sidebar-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 8px 28px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  margin-bottom: 24px;
+}
+.sidebar-logo .logo-icon {
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, #0075FF, #21d4fd);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 800;
+  color: #fff;
+  flex-shrink: 0;
+}
+.sidebar-logo .logo-text {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.sidebar-nav { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+
+.nav-item {
+  padding: 12px 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #a0aec0;
+  transition: all 0.2s ease;
+  border-radius: 12px;
+  position: relative;
+}
+.nav-item:hover { color: #fff; background: rgba(255,255,255,0.05); }
+.nav-item.active {
+  color: #fff;
+  background: linear-gradient(135deg, #0075FF, #21d4fd);
+  box-shadow: 0 4px 12px rgba(0, 117, 255, 0.4);
+}
+.nav-item .nav-icon { font-size: 18px; width: 24px; text-align: center; }
+
+.sidebar-footer {
+  padding-top: 16px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  text-align: center;
+  font-size: 11px;
+  color: rgba(255,255,255,0.2);
+}
+
+/* Mobile hamburger */
+.mobile-toggle {
+  display: none;
+  position: fixed;
+  top: 20px; left: 20px;
+  z-index: 60;
+  background: linear-gradient(135deg, #0075FF, #21d4fd);
+  border: none;
+  color: #fff;
+  width: 42px; height: 42px;
+  border-radius: 12px;
+  font-size: 22px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 117, 255, 0.4);
+}
+
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 40;
+}
+
+/* Main */
+.main {
+  margin-left: 282px;
+  flex: 1;
+  padding: 24px 32px;
+  min-height: 100vh;
+}
+
+.page { display: none; opacity: 0; transition: opacity 0.3s ease; }
+.page.active { display: block; opacity: 1; }
+
+.page-title {
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.page-subtitle {
+  font-size: 14px;
+  color: #a0aec0;
+  margin-bottom: 28px;
+}
+
+/* Stats Cards */
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  margin-bottom: 28px;
+}
+
+.stat-card {
+  background: rgba(15, 21, 53, 0.8);
+  backdrop-filter: blur(120px);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 20px;
+  padding: 20px 24px;
+  box-shadow: 0px 18px 40px rgba(0, 0, 0, 0.25);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  transition: transform 0.2s ease;
+}
+.stat-card:hover { transform: translateY(-2px); }
+
+.stat-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+.stat-icon.blue { background: linear-gradient(135deg, #0075FF, #21d4fd); }
+.stat-icon.purple { background: linear-gradient(135deg, #868CFF, #4318FF); }
+.stat-icon.green { background: linear-gradient(135deg, #01B574, #21d4fd); }
+.stat-icon.orange { background: linear-gradient(135deg, #FFB547, #FF6B00); }
+
+.stat-info {}
+.stat-value {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.stat-label {
+  font-size: 12px;
+  color: #a0aec0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+.stat-sub {
+  font-size: 11px;
+  color: #a0aec0;
+  margin-top: 2px;
+}
+
+/* Glass Card */
+.glass-card {
+  background: rgba(15, 21, 53, 0.8);
+  backdrop-filter: blur(120px);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0px 18px 40px rgba(0, 0, 0, 0.25);
+  margin-bottom: 24px;
+}
+.glass-card h2 {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 20px;
+}
+
+/* Table */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th {
+  text-align: left;
+  padding: 14px 16px;
+  font-size: 10px;
+  text-transform: uppercase;
+  color: #a0aec0;
+  letter-spacing: 1px;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+td {
+  padding: 14px 16px;
+  font-size: 13px;
+  color: #a0aec0;
+  white-space: nowrap;
+}
+tr { transition: background 0.15s ease; }
+tbody tr:hover { background: rgba(255,255,255,0.05); }
+tbody tr { cursor: pointer; }
+
+/* Status badges */
+.badge {
+  display: inline-block;
+  padding: 4px 14px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.badge-new { background: linear-gradient(135deg, #0075FF, #21d4fd); color: #fff; }
+.badge-taken { background: rgba(255,181,71,0.15); color: #FFB547; }
+.badge-in_progress { background: rgba(134,140,255,0.15); color: #868CFF; }
+.badge-completed { background: rgba(1,181,116,0.15); color: #01B574; }
+.badge-cancelled { background: rgba(227,26,26,0.15); color: #E31A1A; }
+
+/* Inputs */
+input, select, textarea {
+  background: rgba(15, 21, 53, 0.5);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+input:focus, select:focus, textarea:focus {
+  border-color: #0075FF;
+  box-shadow: 0 0 0 3px rgba(0,117,255,0.15);
+}
+input::placeholder, textarea::placeholder { color: rgba(255,255,255,0.25); }
+select option { background: #0f123b; color: #fff; }
+
+.btn {
+  padding: 10px 22px;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-primary {
+  background: linear-gradient(135deg, #0075FF, #21d4fd);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(0, 117, 255, 0.3);
+}
+.btn-primary:hover {
+  box-shadow: 0 6px 20px rgba(0, 117, 255, 0.5);
+  transform: translateY(-1px);
+}
+.btn-danger {
+  background: rgba(227,26,26,0.15);
+  color: #E31A1A;
+}
+.btn-danger:hover { background: rgba(227,26,26,0.25); }
+.btn-sm { padding: 8px 16px; font-size: 12px; }
+
+.filters {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.filter-group { display: flex; flex-direction: column; gap: 6px; }
+.filter-group label {
+  font-size: 11px;
+  color: #a0aec0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+/* Manager cards */
+.manager-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+.manager-card {
+  background: rgba(15, 21, 53, 0.8);
+  backdrop-filter: blur(120px);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0px 18px 40px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s ease;
+}
+.manager-card:hover { transform: translateY(-2px); }
+.manager-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.manager-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #868CFF, #4318FF);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.manager-name { font-size: 16px; font-weight: 700; }
+.manager-meta { font-size: 12px; color: #a0aec0; margin-top: 2px; }
+.manager-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 14px;
+  margin-bottom: 14px;
+}
+.manager-stat { text-align: center; }
+.manager-stat .val { font-size: 22px; font-weight: 700; }
+.manager-stat .lbl { font-size: 10px; color: #a0aec0; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+.manager-card-footer { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Rate card */
+.rate-display {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+.rate-big {
+  font-size: 42px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #0075FF, #21d4fd);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.rate-pair {
+  font-size: 16px;
+  color: #a0aec0;
+  font-weight: 600;
+}
+.rate-inputs {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.rate-field { display: flex; flex-direction: column; gap: 6px; }
+.rate-field label {
+  font-size: 11px;
+  color: #a0aec0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+.rate-field input { width: 140px; text-align: right; font-size: 16px; font-weight: 600; }
+
+/* Modal */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(8px);
+  z-index: 100;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+  background: linear-gradient(159.02deg, #0f123b 14.25%, #090d2e 56.45%, #020515 86.14%);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 20px;
+  padding: 28px;
+  min-width: 440px;
+  max-width: 640px;
+  width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: 0px 30px 60px rgba(0, 0, 0, 0.5);
+  position: relative;
+}
+.modal h2 { font-size: 18px; font-weight: 700; margin-bottom: 18px; }
+.modal .close-btn {
+  position: absolute;
+  top: 20px; right: 20px;
+  cursor: pointer;
+  font-size: 22px;
+  color: #a0aec0;
+  background: rgba(255,255,255,0.05);
+  border: none;
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.modal .close-btn:hover { color: #fff; background: rgba(255,255,255,0.1); }
+
+.form-group { margin-bottom: 16px; }
+.form-group label {
+  display: block;
+  font-size: 12px;
+  color: #a0aec0;
+  margin-bottom: 6px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.form-group input, .form-group select { width: 100%; }
+
+/* Messages */
+.messages-list { max-height: 300px; overflow-y: auto; margin: 12px 0; }
+.msg {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 14px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+}
+.msg .msg-sender { font-size: 12px; color: #0075FF; font-weight: 600; margin-bottom: 4px; }
+.msg .msg-text { font-size: 13px; color: #e0e0e0; line-height: 1.5; }
+.msg .msg-time { font-size: 10px; color: rgba(255,255,255,0.25); margin-top: 6px; text-align: right; }
+
+/* Order detail info */
+.order-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 16px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 14px;
+  margin-bottom: 20px;
+}
+.order-info-item { font-size: 13px; }
+.order-info-item .label { color: #a0aec0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; }
+.order-info-item .value { font-weight: 600; margin-top: 2px; }
+
+/* Settings */
+.settings-form { max-width: 520px; }
+.settings-form .form-group input { font-size: 14px; }
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 24px; right: 24px;
+  background: rgba(1, 181, 116, 0.9);
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  z-index: 200;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: all 0.3s ease;
+  pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+
+/* Responsive */
+@media (max-width: 1100px) {
+  .stats-row { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 768px) {
+  .sidebar {
+    transform: translateX(-300px);
+    margin: 0;
+    border-radius: 0 20px 20px 0;
+    width: 260px;
+  }
+  .sidebar.open { transform: translateX(0); }
+  .sidebar-overlay.active { display: block; }
+  .mobile-toggle { display: flex; align-items: center; justify-content: center; }
+  .main { margin-left: 0; padding: 80px 16px 24px; }
+  .stats-row { grid-template-columns: 1fr 1fr; gap: 12px; }
+  .stat-card { padding: 16px; gap: 12px; }
+  .stat-value { font-size: 20px; }
+  .modal { min-width: auto; margin: 10px; }
+  .order-info-grid { grid-template-columns: 1fr; }
+  .rate-big { font-size: 28px; }
+}
+@media (max-width: 480px) {
+  .stats-row { grid-template-columns: 1fr; }
+  .manager-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<button class="mobile-toggle" onclick="toggleSidebar()">&#9776;</button>
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+<div class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-icon">W</div>
+    <div class="logo-text">WangLogistic</div>
+  </div>
+  <div class="sidebar-nav">
+    <div class="nav-item active" data-page="overview">
+      <span class="nav-icon">&#128200;</span> Обзор
+    </div>
+    <div class="nav-item" data-page="orders">
+      <span class="nav-icon">&#128196;</span> Заявки
+    </div>
+    <div class="nav-item" data-page="managers">
+      <span class="nav-icon">&#128101;</span> Менеджеры
+    </div>
+    <div class="nav-item" data-page="rates">
+      <span class="nav-icon">&#128177;</span> Курсы
+    </div>
+    <div class="nav-item" data-page="settings">
+      <span class="nav-icon">&#9881;</span> Настройки
+    </div>
+  </div>
+  <div class="sidebar-footer">WangLogistic v2.0</div>
+</div>
+
+<div class="main">
+
+  <!-- Overview -->
+  <div class="page active" id="page-overview">
+    <div class="page-title">Обзор</div>
+    <div class="page-subtitle">Статистика и последние заявки</div>
+    <div class="stats-row" id="stats-cards"></div>
+    <div class="glass-card">
+      <h2>Последние заявки</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Клиент</th>
+              <th>Направление</th>
+              <th>Сумма</th>
+              <th>Статус</th>
+              <th>Дата</th>
+            </tr>
+          </thead>
+          <tbody id="recent-orders-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Orders -->
+  <div class="page" id="page-orders">
+    <div class="page-title">Заявки</div>
+    <div class="page-subtitle">Управление заявками</div>
+    <div class="glass-card">
+      <div class="filters">
+        <div class="filter-group">
+          <label>Статус</label>
+          <select id="filter-status">
+            <option value="">Все статусы</option>
+            <option value="new">Новая</option>
+            <option value="taken">Принята</option>
+            <option value="in_progress">В работе</option>
+            <option value="completed">Завершена</option>
+            <option value="cancelled">Отменена</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Дата от</label>
+          <input type="date" id="filter-from">
+        </div>
+        <div class="filter-group">
+          <label>Дата до</label>
+          <input type="date" id="filter-to">
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="loadOrders()" style="margin-bottom:1px;">Применить</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Клиент</th>
+              <th>Направление</th>
+              <th>Сумма</th>
+              <th>Курс</th>
+              <th>Результат</th>
+              <th>Статус</th>
+              <th>Менеджер</th>
+              <th>Дата</th>
+            </tr>
+          </thead>
+          <tbody id="orders-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Managers -->
+  <div class="page" id="page-managers">
+    <div class="page-title">Менеджеры</div>
+    <div class="page-subtitle">Команда и статистика</div>
+    <div style="margin-bottom: 20px;">
+      <button class="btn btn-primary" onclick="showAddManager()">+ Добавить менеджера</button>
+    </div>
+    <div class="manager-grid" id="managers-list"></div>
+  </div>
+
+  <!-- Rates -->
+  <div class="page" id="page-rates">
+    <div class="page-title">Курсы валют</div>
+    <div class="page-subtitle">Управление курсами RUB/CNY</div>
+    <div class="glass-card" id="rates-container">
+      <div id="rates-content"></div>
+    </div>
+  </div>
+
+  <!-- Settings -->
+  <div class="page" id="page-settings">
+    <div class="page-title">Настройки</div>
+    <div class="page-subtitle">Конфигурация бота</div>
+    <div class="glass-card">
+      <div class="settings-form">
+        <div class="form-group">
+          <label>Токен бота</label>
+          <input type="password" id="set-bot-token" placeholder="123456:ABC-DEF...">
+        </div>
+        <div class="form-group">
+          <label>ID группы менеджеров</label>
+          <input type="text" id="set-manager-group" placeholder="-100...">
+        </div>
+        <div style="margin-top: 24px;">
+          <button class="btn btn-primary" onclick="saveSettings()">Сохранить настройки</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Order Detail Modal -->
+<div class="modal-overlay" id="order-modal">
+  <div class="modal">
+    <button class="close-btn" onclick="closeModal()">&times;</button>
+    <h2>Заявка #<span id="modal-order-id"></span></h2>
+    <div id="modal-order-info"></div>
+    <h2>Сообщения</h2>
+    <div class="messages-list" id="modal-messages"></div>
+    <h2 style="margin-top: 8px;">Управление</h2>
+    <div class="filters" style="margin-bottom:0;">
+      <div class="filter-group">
+        <label>Статус</label>
+        <select id="modal-status">
+          <option value="new">Новая</option>
+          <option value="taken">Принята</option>
+          <option value="in_progress">В работе</option>
+          <option value="completed">Завершена</option>
+          <option value="cancelled">Отменена</option>
+        </select>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="updateOrder()" style="margin-bottom:1px;">Обновить</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Manager Modal -->
+<div class="modal-overlay" id="manager-modal">
+  <div class="modal">
+    <button class="close-btn" onclick="closeManagerModal()">&times;</button>
+    <h2>Добавить менеджера</h2>
+    <div class="form-group">
+      <label>Telegram ID</label>
+      <input type="number" id="mgr-tg-id" placeholder="123456789">
+    </div>
+    <div class="form-group">
+      <label>Username</label>
+      <input type="text" id="mgr-username" placeholder="username">
+    </div>
+    <div class="form-group">
+      <label>Имя</label>
+      <input type="text" id="mgr-name" placeholder="Имя">
+    </div>
+    <button class="btn btn-primary" onclick="addManager()">Добавить</button>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// Navigation
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    item.classList.add('active');
+    const page = item.dataset.page;
+    const el = document.getElementById('page-' + page);
+    el.classList.add('active');
+    if (page === 'overview') loadStats();
+    if (page === 'orders') loadOrders();
+    if (page === 'managers') loadManagers();
+    if (page === 'rates') loadRates();
+    if (page === 'settings') loadSettings();
+    // Close mobile sidebar
+    if (window.innerWidth <= 768) {
+      document.getElementById('sidebar').classList.remove('open');
+      document.getElementById('sidebar-overlay').classList.remove('active');
+    }
+  });
+});
+
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebar-overlay').classList.toggle('active');
+}
+
+// Toast
+function showToast(msg, color) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = color || 'rgba(1, 181, 116, 0.9)';
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// Helpers
+function formatDate(d) {
+  if (!d) return '\u2014';
+  const dt = new Date(d + 'Z');
+  return dt.toLocaleDateString('ru-RU') + ' ' + dt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+}
+function formatNum(n) {
+  if (n == null) return '\u2014';
+  return Number(n).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+}
+function statusBadge(s) {
+  const labels = { new: 'Новая', taken: 'Принята', in_progress: 'В работе', completed: 'Завершена', cancelled: 'Отменена' };
+  return `<span class="badge badge-${s}">${labels[s] || s}</span>`;
+}
+function escapeHtml(t) {
+  const d = document.createElement('div');
+  d.textContent = t;
+  return d.innerHTML;
+}
+
+// Animated counter
+function animateValue(el, start, end, duration) {
+  if (start === end) { el.textContent = formatNum(end); return; }
+  const range = end - start;
+  const startTime = performance.now();
+  function step(ts) {
+    const progress = Math.min((ts - startTime) / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const current = Math.round(start + range * eased);
+    el.textContent = formatNum(current);
+    if (progress < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+// Stats
+async function loadStats() {
+  try {
+    const r = await fetch('/api/stats');
+    const d = await r.json();
+    document.getElementById('stats-cards').innerHTML = `
+      <div class="stat-card">
+        <div class="stat-icon blue">&#128203;</div>
+        <div class="stat-info">
+          <div class="stat-value" data-count="${d.today.orders}">0</div>
+          <div class="stat-label">Заявок сегодня</div>
+          <div class="stat-sub">Объём: ${formatNum(d.today.volume)}</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon purple">&#128197;</div>
+        <div class="stat-info">
+          <div class="stat-value" data-count="${d.week.orders}">0</div>
+          <div class="stat-label">За неделю</div>
+          <div class="stat-sub">Объём: ${formatNum(d.week.volume)}</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon green">&#128200;</div>
+        <div class="stat-info">
+          <div class="stat-value" data-count="${d.month.orders}">0</div>
+          <div class="stat-label">За месяц</div>
+          <div class="stat-sub">Объём: ${formatNum(d.month.volume)}</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon orange">&#9889;</div>
+        <div class="stat-info">
+          <div class="stat-value" data-count="${d.active}">0</div>
+          <div class="stat-label">Активные</div>
+        </div>
+      </div>
+    `;
+    // Animate numbers
+    document.querySelectorAll('[data-count]').forEach(el => {
+      animateValue(el, 0, parseInt(el.dataset.count) || 0, 800);
+    });
+
+    // Load recent orders for overview
+    loadRecentOrders();
+  } catch (e) { console.error(e); }
+}
+
+async function loadRecentOrders() {
+  try {
+    const r = await fetch('/api/orders?limit=8');
+    const orders = await r.json();
+    const tbody = document.getElementById('recent-orders-tbody');
+    if (!orders.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:#a0aec0;">Нет заявок</td></tr>';
+      return;
+    }
+    tbody.innerHTML = orders.slice(0, 8).map(o => `
+      <tr onclick="navigateToOrder(${o.id})">
+        <td style="color:#fff;font-weight:600;">#${o.id}</td>
+        <td>${o.user_name || o.user_username || o.user_id || '\u2014'}</td>
+        <td>${o.currency_from}/${o.currency_to}</td>
+        <td style="color:#fff;font-weight:600;">${formatNum(o.amount)}</td>
+        <td>${statusBadge(o.status)}</td>
+        <td>${formatDate(o.created_at)}</td>
+      </tr>
+    `).join('');
+  } catch (e) { console.error(e); }
+}
+
+function navigateToOrder(id) {
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelector('[data-page="orders"]').classList.add('active');
+  document.getElementById('page-orders').classList.add('active');
+  loadOrders().then(() => showOrder(id));
+}
+
+// Orders
+async function loadOrders() {
+  try {
+    const params = new URLSearchParams();
+    const st = document.getElementById('filter-status').value;
+    const fr = document.getElementById('filter-from').value;
+    const to = document.getElementById('filter-to').value;
+    if (st) params.set('status', st);
+    if (fr) params.set('from', fr);
+    if (to) params.set('to', to);
+
+    const r = await fetch('/api/orders?' + params);
+    const orders = await r.json();
+    const tbody = document.getElementById('orders-tbody');
+    if (orders.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#a0aec0;padding:40px;">Нет заявок</td></tr>';
+      return;
+    }
+    tbody.innerHTML = orders.map(o => `
+      <tr onclick="showOrder(${o.id})">
+        <td style="color:#fff;font-weight:600;">#${o.id}</td>
+        <td>${o.user_name || o.user_username || o.user_id || '\u2014'}</td>
+        <td>${o.currency_from}/${o.currency_to}</td>
+        <td style="color:#fff;font-weight:600;">${formatNum(o.amount)}</td>
+        <td>${formatNum(o.rate)}</td>
+        <td>${formatNum(o.amount_result)}</td>
+        <td>${statusBadge(o.status)}</td>
+        <td>${o.manager_name || o.manager_username || '\u2014'}</td>
+        <td>${formatDate(o.created_at)}</td>
+      </tr>
+    `).join('');
+  } catch (e) { console.error(e); }
+}
+
+let currentOrderId = null;
+async function showOrder(id) {
+  currentOrderId = id;
+  try {
+    const r = await fetch('/api/orders/' + id);
+    const o = await r.json();
+    document.getElementById('modal-order-id').textContent = o.id;
+    document.getElementById('modal-order-info').innerHTML = `
+      <div class="order-info-grid">
+        <div class="order-info-item"><div class="label">Пользователь</div><div class="value">${o.user_name || o.user_username || o.user_id || '\u2014'}</div></div>
+        <div class="order-info-item"><div class="label">Направление</div><div class="value">${o.currency_from}/${o.currency_to}</div></div>
+        <div class="order-info-item"><div class="label">Сумма</div><div class="value">${formatNum(o.amount)}</div></div>
+        <div class="order-info-item"><div class="label">Курс</div><div class="value">${formatNum(o.rate)}</div></div>
+        <div class="order-info-item"><div class="label">Результат</div><div class="value">${formatNum(o.amount_result)}</div></div>
+        <div class="order-info-item"><div class="label">Менеджер</div><div class="value">${o.manager_name || o.manager_username || '\u2014'}</div></div>
+        <div class="order-info-item"><div class="label">Создана</div><div class="value">${formatDate(o.created_at)}</div></div>
+        <div class="order-info-item"><div class="label">Обновлена</div><div class="value">${formatDate(o.updated_at)}</div></div>
+      </div>
+    `;
+    document.getElementById('modal-status').value = o.status;
+
+    const msgs = document.getElementById('modal-messages');
+    if (o.messages && o.messages.length > 0) {
+      msgs.innerHTML = o.messages.map(m => `
+        <div class="msg">
+          <div class="msg-sender">${m.sender_name || m.sender_username || m.sender_id || 'Система'}</div>
+          <div class="msg-text">${escapeHtml(m.text)}</div>
+          <div class="msg-time">${formatDate(m.created_at)}</div>
+        </div>
+      `).join('');
+    } else {
+      msgs.innerHTML = '<div style="color:#a0aec0;font-size:13px;padding:16px;text-align:center;">Нет сообщений</div>';
+    }
+
+    document.getElementById('order-modal').classList.add('active');
+  } catch (e) { console.error(e); }
+}
+
+async function updateOrder() {
+  if (!currentOrderId) return;
+  try {
+    await fetch('/api/orders/' + currentOrderId, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: document.getElementById('modal-status').value })
+    });
+    closeModal();
+    loadOrders();
+    showToast('Статус обновлён');
+  } catch (e) { console.error(e); }
+}
+
+function closeModal() { document.getElementById('order-modal').classList.remove('active'); }
+function closeManagerModal() { document.getElementById('manager-modal').classList.remove('active'); }
+
+// Managers
+async function loadManagers() {
+  try {
+    const r = await fetch('/api/managers');
+    const managers = await r.json();
+    const list = document.getElementById('managers-list');
+    if (managers.length === 0) {
+      list.innerHTML = '<div style="color:#a0aec0;padding:40px;text-align:center;">Нет менеджеров</div>';
+      return;
+    }
+    list.innerHTML = managers.map(m => {
+      const initials = (m.first_name || m.username || '?').charAt(0).toUpperCase();
+      return `
+      <div class="manager-card">
+        <div class="manager-header">
+          <div class="manager-avatar">${initials}</div>
+          <div>
+            <div class="manager-name">${m.first_name || m.username || 'ID: ' + m.tg_id}</div>
+            <div class="manager-meta">@${m.username || '\u2014'} &middot; ${m.is_active ? '<span style="color:#01B574">Активен</span>' : '<span style="color:#E31A1A">Неактивен</span>'}</div>
+          </div>
+        </div>
+        <div class="manager-stats">
+          <div class="manager-stat">
+            <div class="val">${m.total_orders || 0}</div>
+            <div class="lbl">Заявок</div>
+          </div>
+          <div class="manager-stat">
+            <div class="val">${m.completed_orders || 0}</div>
+            <div class="lbl">Завершено</div>
+          </div>
+          <div class="manager-stat">
+            <div class="val">${m.avg_time_minutes ? m.avg_time_minutes + 'м' : '\u2014'}</div>
+            <div class="lbl">Ср. время</div>
+          </div>
+        </div>
+        <div class="manager-card-footer">
+          <button class="btn btn-danger btn-sm" onclick="removeManager(${m.tg_id})">Удалить</button>
+        </div>
+      </div>
+    `}).join('');
+  } catch (e) { console.error(e); }
+}
+
+function showAddManager() { document.getElementById('manager-modal').classList.add('active'); }
+
+async function addManager() {
+  const tg_id = document.getElementById('mgr-tg-id').value;
+  const username = document.getElementById('mgr-username').value;
+  const first_name = document.getElementById('mgr-name').value;
+  if (!tg_id) return showToast('Укажите Telegram ID', 'rgba(227,26,26,0.9)');
+  try {
+    await fetch('/api/managers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tg_id: parseInt(tg_id), username, first_name })
+    });
+    closeManagerModal();
+    document.getElementById('mgr-tg-id').value = '';
+    document.getElementById('mgr-username').value = '';
+    document.getElementById('mgr-name').value = '';
+    loadManagers();
+    showToast('Менеджер добавлен');
+  } catch (e) { console.error(e); }
+}
+
+async function removeManager(id) {
+  if (!confirm('Удалить менеджера?')) return;
+  try {
+    await fetch('/api/managers/' + id, { method: 'DELETE' });
+    loadManagers();
+    showToast('Менеджер удалён');
+  } catch (e) { console.error(e); }
+}
+
+// Rates
+async function loadRates() {
+  try {
+    const r = await fetch('/api/rates');
+    const rates = await r.json();
+    const container = document.getElementById('rates-content');
+    if (!rates.length) {
+      container.innerHTML = `
+        <div style="text-align:center;padding:40px;color:#a0aec0;">Нет курсов</div>
+        <div style="margin-top:20px;">
+          <h2 style="font-size:16px;margin-bottom:16px;">Добавить пару</h2>
+          <div class="rate-inputs">
+            <div class="rate-field">
+              <label>Пара (напр. RUB/CNY)</label>
+              <input type="text" id="new-pair" placeholder="XXX/YYY" style="width:140px;">
+            </div>
+            <div class="rate-field">
+              <label>Покупка</label>
+              <input type="number" step="0.01" id="new-buy" style="width:140px;">
+            </div>
+            <div class="rate-field">
+              <label>Продажа</label>
+              <input type="number" step="0.01" id="new-sell" style="width:140px;">
+            </div>
+            <button class="btn btn-primary" onclick="addRate()">Добавить</button>
+          </div>
+        </div>
+      `;
+      return;
+    }
+    container.innerHTML = rates.map(rt => `
+      <div style="margin-bottom:28px;padding-bottom:28px;border-bottom:1px solid rgba(255,255,255,0.06);">
+        <div class="rate-display">
+          <div>
+            <div class="rate-pair">${rt.pair}</div>
+            <div class="rate-big">${Number(rt.sell_rate).toFixed(2)}</div>
+          </div>
+          <div style="font-size:13px;color:#a0aec0;">
+            Маржа: <span style="color:#FFB547;font-weight:600;">${(rt.sell_rate - rt.buy_rate).toFixed(2)}</span>
+            <br>Обновлено: ${formatDate(rt.updated_at)}
+          </div>
+        </div>
+        <div class="rate-inputs">
+          <div class="rate-field">
+            <label>Курс покупки</label>
+            <input type="number" step="0.01" value="${rt.buy_rate}" id="buy-${rt.pair}">
+          </div>
+          <div class="rate-field">
+            <label>Курс продажи</label>
+            <input type="number" step="0.01" value="${rt.sell_rate}" id="sell-${rt.pair}">
+          </div>
+          <button class="btn btn-primary" onclick="saveRate('${rt.pair}')">Сохранить</button>
+        </div>
+      </div>
+    `).join('') + `
+      <h2 style="font-size:16px;margin-bottom:16px;">Добавить пару</h2>
+      <div class="rate-inputs">
+        <div class="rate-field">
+          <label>Пара (напр. GBP/RUB)</label>
+          <input type="text" id="new-pair" placeholder="XXX/YYY" style="width:140px;">
+        </div>
+        <div class="rate-field">
+          <label>Покупка</label>
+          <input type="number" step="0.01" id="new-buy" style="width:140px;">
+        </div>
+        <div class="rate-field">
+          <label>Продажа</label>
+          <input type="number" step="0.01" id="new-sell" style="width:140px;">
+        </div>
+        <button class="btn btn-primary" onclick="addRate()">Добавить</button>
+      </div>
+    `;
+  } catch (e) { console.error(e); }
+}
+
+async function saveRate(pair) {
+  const buy_rate = parseFloat(document.getElementById('buy-' + pair).value);
+  const sell_rate = parseFloat(document.getElementById('sell-' + pair).value);
+  try {
+    await fetch('/api/rates/' + encodeURIComponent(pair), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ buy_rate, sell_rate })
+    });
+    loadRates();
+    showToast('Курс сохранён');
+  } catch (e) { console.error(e); }
+}
+
+async function addRate() {
+  const pair = document.getElementById('new-pair').value.trim().toUpperCase();
+  const buy_rate = parseFloat(document.getElementById('new-buy').value);
+  const sell_rate = parseFloat(document.getElementById('new-sell').value);
+  if (!pair || isNaN(buy_rate) || isNaN(sell_rate)) return showToast('Заполните все поля', 'rgba(227,26,26,0.9)');
+  try {
+    await fetch('/api/rates/' + encodeURIComponent(pair), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ buy_rate, sell_rate })
+    });
+    document.getElementById('new-pair').value = '';
+    document.getElementById('new-buy').value = '';
+    document.getElementById('new-sell').value = '';
+    loadRates();
+    showToast('Пара добавлена');
+  } catch (e) { console.error(e); }
+}
+
+// Settings
+async function loadSettings() {
+  try {
+    const r = await fetch('/api/settings');
+    const s = await r.json();
+    document.getElementById('set-bot-token').value = s.bot_token || '';
+    document.getElementById('set-manager-group').value = s.manager_group_id || '';
+  } catch (e) { console.error(e); }
+}
+
+async function saveSettings() {
+  try {
+    await fetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        bot_token: document.getElementById('set-bot-token').value,
+        manager_group_id: document.getElementById('set-manager-group').value
+      })
+    });
+    showToast('Настройки сохранены');
+  } catch (e) { console.error(e); }
+}
+
+// Close modals on overlay click
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) {
+      overlay.classList.remove('active');
+    }
+  });
+});
+
+// Keyboard
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal-overlay.active').forEach(m => m.classList.remove('active'));
+  }
+});
+
+// Init + auto-refresh
+loadStats();
+setInterval(() => {
+  const activePage = document.querySelector('.page.active');
+  if (activePage && activePage.id === 'page-overview') loadStats();
+}, 30000);
+</script>
+</body>
+</html>

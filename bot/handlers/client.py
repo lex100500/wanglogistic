@@ -1,5 +1,11 @@
+import json
+import re
+
+import os
+
 from aiogram import Router, F, types, Bot
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
+from aiogram.types import FSInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
@@ -24,6 +30,16 @@ STATUS_TEXT = {
 }
 
 PAIR = "RUB/CNY"
+BANNER_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "bannerbot.png")
+
+
+async def safe_edit(callback: types.CallbackQuery, text: str, **kwargs):
+    """edit_text для текстовых сообщений, delete+answer для фото."""
+    if callback.message.photo:
+        await callback.message.delete()
+        await callback.message.answer(text, **kwargs)
+    else:
+        await callback.message.edit_text(text, **kwargs)
 
 
 class OrderFSM(StatesGroup):
@@ -34,6 +50,7 @@ class OrderFSM(StatesGroup):
     waiting_amount = State()
     waiting_confirm = State()
     waiting_message = State()
+    waiting_order_search = State()
 
 
 class ProfileFSM(StatesGroup):
@@ -51,11 +68,70 @@ class ProfileFSM(StatesGroup):
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     db.upsert_user(message.from_user.id, message.from_user.username, message.from_user.first_name)
-    await message.answer(
-        f"Добро пожаловать, {message.from_user.first_name}!\n"
-        "Обмен рублей и юаней. Выберите действие:",
+    await message.answer_photo(
+        FSInputFile(BANNER_PATH),
+        caption=f"Добро пожаловать, {message.from_user.first_name}!\n"
+                "Обмен рублей и юаней. Выберите действие:",
         reply_markup=_main_menu(),
     )
+
+
+# ---- Акции ----
+
+def _resolve_promotions_text(text: str) -> str:
+    rate_row = db.get_rate("RUB/CNY")
+    base_rate = rate_row["buy_rate"] if rate_row else 0.0
+
+    try:
+        tiers = json.loads(db.get_setting("volume_discounts", "[]"))
+        tiers_map = {str(int(t["min_cny"])): t["discount"] for t in tiers}
+    except Exception:
+        tiers_map = {}
+
+    try:
+        bank_list = json.loads(db.get_setting("bank_discounts", "[]"))
+        banks_map = {d["bank"]: d["discount"] for d in bank_list}
+    except Exception:
+        banks_map = {}
+
+    def replace_tier(m):
+        key = str(int(float(m.group(1))))
+        discount = tiers_map.get(key)
+        if discount is None:
+            return m.group(0)
+        return str(round(base_rate - discount, 2))
+
+    def replace_bank(m):
+        bank_name = m.group(1)
+        discount = banks_map.get(bank_name)
+        if discount is None:
+            return m.group(0)
+        return str(round(discount, 2))
+
+    text = re.sub(r'\{тир:(\d+(?:\.\d+)?)\}', replace_tier, text)
+    text = re.sub(r'\{банк:([^}]+)\}', replace_bank, text)
+    text = text.replace('{курс}', str(round(base_rate, 2)))
+    return text
+
+
+@router.callback_query(F.data == "promotions")
+async def show_promotions(callback: types.CallbackQuery):
+    raw = db.get_setting("promotions_text", "Акции временно недоступны.")
+    text = _resolve_promotions_text(raw)
+    await safe_edit(callback,
+        text,
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
+            [types.InlineKeyboardButton(text="◀️ Назад", callback_data="back_menu")]
+        ]),
+    )
+    await callback.answer()
+
+
+# ---- /myid ----
+
+@router.message(Command("myid"))
+async def cmd_myid(message: types.Message):
+    await message.answer(f"Ваш Telegram ID: `{message.from_user.id}`", parse_mode="Markdown")
 
 
 # ---- Меню ----
@@ -63,7 +139,13 @@ async def cmd_start(message: types.Message, state: FSMContext):
 @router.callback_query(F.data == "back_menu")
 async def back_menu(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
-    await callback.message.edit_text("Выберите действие:", reply_markup=_main_menu())
+    await callback.message.delete()
+    await callback.message.answer_photo(
+        FSInputFile(BANNER_PATH),
+        caption=f"Добро пожаловать, {callback.from_user.first_name}!\n"
+                "Обмен рублей и юаней. Выберите действие:",
+        reply_markup=_main_menu(),
+    )
     await callback.answer()
 
 
@@ -71,7 +153,7 @@ async def back_menu(callback: types.CallbackQuery, state: FSMContext):
 async def show_help(callback: types.CallbackQuery):
     guide_url = db.get_setting("receipt_guide_url", "https://telegra.ph/test-cheki-03-23")
     manager = db.get_setting("main_manager", "bulievich")
-    await callback.message.edit_text(
+    await safe_edit(callback,
         f"Напишите главному менеджеру — @{manager}",
         reply_markup=kb.help_kb(guide_url),
     )
@@ -86,8 +168,8 @@ async def select_direction(callback: types.CallbackQuery, state: FSMContext):
     active = db.get_user_active_order(callback.from_user.id)
     if active:
         st = STATUS_TEXT.get(active["status"], active["status"])
-        await callback.message.edit_text(
-            f"У вас уже есть активная заявка #{active['id']} ({st}).\n"
+        await safe_edit(callback,
+            f"У вас уже есть активная заявка ({st}).\n"
             "Дождитесь её завершения или отмены.",
             reply_markup=_main_menu(),
         )
@@ -96,7 +178,7 @@ async def select_direction(callback: types.CallbackQuery, state: FSMContext):
     rate_row = db.get_rate(PAIR)
     buy = rate_row["buy_rate"] if rate_row else "—"
     sell = rate_row["sell_rate"] if rate_row else "—"
-    await callback.message.edit_text(
+    await safe_edit(callback,
         f"Курсы RUB/CNY:\n"
         f"Покупка (RUB→CNY): {buy}\n"
         f"Продажа (CNY→RUB): {sell}\n\n"
@@ -192,7 +274,7 @@ async def _continue_buy_flow(message, state: FSMContext, has_wechat: bool, has_a
         await state.update_data(pay_method=method)
         await state.set_state(OrderFSM.waiting_bank)
         await message.edit_text(
-            "Выберите банк для перевода:",
+            "Выберите банк с которого вы будете производить перевод:",
             reply_markup=kb.bank_select_kb(),
         )
 
@@ -210,10 +292,38 @@ async def pay_method_selected(callback: types.CallbackQuery, state: FSMContext):
     await state.update_data(pay_method=method)
     await state.set_state(OrderFSM.waiting_bank)
     await callback.message.edit_text(
-        "Выберите банк для перевода:",
+        "Выберите банк с которого вы будете производить перевод:",
         reply_markup=kb.bank_select_kb(),
     )
     await callback.answer()
+
+
+def _get_bank_discount(bank: str) -> float:
+    """Возвращает скидку к курсу для данного банка."""
+    raw = db.get_setting("bank_discounts", "[]")
+    try:
+        discounts = json.loads(raw)
+        for d in discounts:
+            if d["bank"] == bank:
+                return float(d["discount"])
+    except Exception:
+        pass
+    return 0.0
+
+
+def _get_volume_discount(cny_amount: float) -> tuple:
+    """Возвращает (скидка, метка) для объёма в CNY."""
+    raw = db.get_setting("volume_discounts", "[]")
+    try:
+        tiers = sorted(json.loads(raw), key=lambda t: t["min_cny"])
+    except Exception:
+        return 0.0, ""
+    best_discount, best_label = 0.0, ""
+    for tier in tiers:
+        if cny_amount >= tier["min_cny"]:
+            best_discount = tier["discount"]
+            best_label = f"от {int(tier['min_cny'])} CNY"
+    return best_discount, best_label
 
 
 @router.callback_query(F.data.startswith("bank:"), OrderFSM.waiting_bank)
@@ -224,14 +334,28 @@ async def bank_selected(callback: types.CallbackQuery, state: FSMContext):
         await callback.message.edit_text("Введите название вашего банка:")
         await callback.answer()
         return
+
+    data = await state.get_data()
+    rate = data["rate"]
+    bank_discount = 0.0
+    discount_note = ""
+    if data.get("cur_from") == "RUB":
+        bank_discount = _get_bank_discount(bank)
+        if bank_discount > 0:
+            rate = round(rate - bank_discount, 2)
+            discount_note = f"\n🎁 {bank}: скидка −{bank_discount} на курс"
+
     await state.update_data(
         bank=bank,
+        rate=rate,
+        orig_rate=data["rate"],
+        bank_discount=bank_discount,
+        bank_discount_applied=bank_discount > 0,
         flow_msg_id=callback.message.message_id,
         flow_chat_id=callback.message.chat.id,
     )
     await state.set_state(OrderFSM.waiting_amount)
-    data = await state.get_data()
-    await callback.message.edit_text(f"Введите сумму в {data['cur_from']}:")
+    await callback.message.edit_text(f"Введите сумму в {data['cur_from']}:{discount_note}")
     await callback.answer()
 
 
@@ -266,20 +390,56 @@ async def enter_amount(message: types.Message, state: FSMContext):
         return
 
     data = await state.get_data()
-    rate = data["rate"]
 
-    # RUB→CNY: юани = рубли / курс
-    # CNY→RUB: рубли = юани * курс
+    # Проверка минимальной суммы для RUB→CNY
+    if data.get("cur_from") == "RUB":
+        try:
+            min_amount = float(db.get_setting("min_buy_amount", "0"))
+        except Exception:
+            min_amount = 0
+        if min_amount > 0 and amount < min_amount:
+            await message.answer(f"Минимальная сумма для покупки юаней: {int(min_amount)} RUB")
+            return
+
+    base_rate = data["rate"]
+    bank_discount = data.get("bank_discount", 0.0)
+
+    discounts_info = []
+    if data.get("bank_discount_applied") and bank_discount > 0:
+        bank = data.get("bank", "")
+        discounts_info.append(f"💳 {bank}: −{bank_discount}")
+
+    rate = base_rate
+
+    # Объёмная скидка только для RUB→CNY
+    if data["cur_from"] == "RUB":
+        est_cny = amount / rate
+        vol_discount, vol_label = _get_volume_discount(est_cny)
+        if vol_discount > 0:
+            rate = round(rate - vol_discount, 2)
+            discounts_info.append(f"📦 Объём ({vol_label}): −{vol_discount}")
+
+    # Расчёт итога
     if data["cur_from"] == "RUB":
         result = round(amount / rate, 2)
     else:
         result = round(amount * rate, 2)
 
-    await state.update_data(amount=amount, amount_result=result, amount_msg_id=message.message_id)
+    await state.update_data(amount=amount, amount_result=result, rate=rate, amount_msg_id=message.message_id)
     await state.set_state(OrderFSM.waiting_confirm)
 
     bank = data.get("bank")
     pay_method = data.get("pay_method")
+
+    discount_block = ""
+    if discounts_info:
+        orig_rate = data.get("orig_rate", base_rate)
+        discount_block = (
+            f"\n📊 Скидки применены:\n"
+            + "\n".join(f"  {d}" for d in discounts_info)
+            + f"\n  Итоговый курс: {rate} (базовый: {orig_rate})\n"
+        )
+
     extra = ""
     if bank:
         extra += f"Банк: {bank}\n"
@@ -289,9 +449,9 @@ async def enter_amount(message: types.Message, state: FSMContext):
 
     await message.answer(
         f"Вы отдаёте: {amount} {data['cur_from']}\n"
-        f"Курс: {rate}\n"
         f"Вы получите: {result} {data['cur_to']}\n"
-        f"{extra}\n"
+        f"{extra}"
+        f"{discount_block}\n"
         "Подтвердить заявку?",
         reply_markup=kb.confirm_order_kb(),
     )
@@ -331,10 +491,12 @@ async def confirm_order(callback: types.CallbackQuery, state: FSMContext, bot: B
 
     await bot.send_message(
         chat_id,
-        f"✅ Заявка #{order_id} создана!\n"
+        f"✅ Заявка создана!\n"
         f"{data['amount']} {data['cur_from']} → {data['amount_result']} {data['cur_to']}\n"
         "Ожидайте — менеджер скоро возьмёт заказ.",
-        reply_markup=_main_menu(),
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
+            [types.InlineKeyboardButton(text="❌ Отменить заявку", callback_data=f"client_cancel:{order_id}")],
+        ]),
     )
 
     # Уведомляем всех менеджеров лично
@@ -346,14 +508,15 @@ async def confirm_order(callback: types.CallbackQuery, state: FSMContext, bot: B
             pm = data.get("pay_method")
             if pm:
                 method_line = f"\nПолучение: {'WeChat' if pm == 'wechat' else 'Alipay'}"
-            await bot.send_message(
+            sent = await bot.send_message(
                 mgr["tg_id"],
                 f"Новая заявка #{order_id}\n"
-                f"Клиент: {callback.from_user.first_name} (@{callback.from_user.username or '—'})\n"
+                f"Клиент: {callback.from_user.first_name}\n"
                 f"{data['amount']} {data['cur_from']} → {data['amount_result']} {data['cur_to']}\n"
                 f"Курс: {data['rate']}{bank_line}{method_line}",
                 reply_markup=kb.manager_take_order_kb(order_id),
             )
+            db.save_order_notification(order_id, mgr["tg_id"], sent.message_id, sent.chat.id)
         except Exception:
             pass
 
@@ -365,6 +528,54 @@ async def cancel_order_creation(callback: types.CallbackQuery, state: FSMContext
     await callback.answer()
 
 
+# ---- Отмена клиентом после взятия заявки ----
+
+@router.callback_query(F.data.startswith("client_cancel:"))
+async def client_cancel_order(callback: types.CallbackQuery, bot: Bot):
+    order_id = callback.data.split(":", 1)[1]
+    order = db.get_order(order_id)
+    if not order or str(order["user_id"]) != str(callback.from_user.id):
+        await callback.answer("Заявка не найдена", show_alert=True)
+        return
+    if order["status"] in ("completed", "cancelled"):
+        await callback.answer("Заявка уже закрыта", show_alert=True)
+        return
+
+    db.update_order_status(order_id, "cancelled")
+    await callback.message.delete()
+    await callback.message.answer_photo(
+        FSInputFile(BANNER_PATH),
+        caption=f"❌ Заявка отменена.\n\n"
+                f"Добро пожаловать, {callback.from_user.first_name}!\n"
+                "Обмен рублей и юаней. Выберите действие:",
+        reply_markup=_main_menu(),
+    )
+    await callback.answer()
+
+    # Редактируем уведомления всем менеджерам — убираем кнопку, добавляем пометку
+    notifications = db.get_order_notifications(order_id)
+    for notif in notifications:
+        try:
+            await bot.edit_message_reply_markup(
+                chat_id=notif["chat_id"],
+                message_id=notif["message_id"],
+                reply_markup=None,
+            )
+        except Exception:
+            pass
+        try:
+            await bot.edit_message_text(
+                chat_id=notif["chat_id"],
+                message_id=notif["message_id"],
+                text=f"❌ Отменил клиент\n\n"
+                     f"Заявка #{order_id}\n"
+                     f"Клиент: {callback.from_user.first_name}\n"
+                     f"{order['amount']} {order['currency_from']} → {order['amount_result']} {order['currency_to']}",
+            )
+        except Exception:
+            pass
+
+
 # ---- Мои заявки ----
 
 @router.callback_query(F.data == "my_orders")
@@ -372,7 +583,7 @@ async def my_orders(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
     orders = db.get_user_orders(callback.from_user.id)
     if not orders:
-        await callback.message.edit_text("У вас пока нет заявок.", reply_markup=_main_menu())
+        await safe_edit(callback, "У вас пока нет заявок.", reply_markup=_main_menu())
         await callback.answer()
         return
 
@@ -383,15 +594,41 @@ async def my_orders(callback: types.CallbackQuery, state: FSMContext):
 
     buttons = [
         [types.InlineKeyboardButton(text=f"#{o['id']}", callback_data=f"order:{o['id']}")]
-        for o in orders
+        for o in orders[:3]
     ]
-    buttons.append([types.InlineKeyboardButton(text="Назад", callback_data="back_menu")])
+    buttons.append([types.InlineKeyboardButton(text="🔍 Найти другую заявку", callback_data="order_search")])
+    buttons.append([types.InlineKeyboardButton(text="◀️ Назад", callback_data="back_menu")])
 
-    await callback.message.edit_text(
+    await safe_edit(callback,
         "Ваши заявки:\n\n" + "\n".join(lines),
         reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons),
     )
     await callback.answer()
+
+
+@router.callback_query(F.data == "order_search")
+async def order_search_start(callback: types.CallbackQuery, state: FSMContext):
+    await state.set_state(OrderFSM.waiting_order_search)
+    await callback.message.edit_text("Введите номер заявки:")
+    await callback.answer()
+
+
+@router.message(OrderFSM.waiting_order_search)
+async def order_search_input(message: types.Message, state: FSMContext):
+    await state.clear()
+    order_id = message.text.strip().lstrip("#")
+    order = db.get_order(order_id)
+    if not order or str(order["user_id"]) != str(message.from_user.id):
+        await message.answer("Заявка не найдена.", reply_markup=_main_menu())
+        return
+    st = STATUS_TEXT.get(order["status"], order["status"])
+    text = (
+        f"Заявка #{order['id']}\n"
+        f"{order['amount']} {order['currency_from']} → {order['amount_result']} {order['currency_to']}\n"
+        f"Статус: {st}"
+    )
+    from bot import keyboards as kb
+    await message.answer(text, reply_markup=kb.order_detail_kb(str(order["id"])))
 
 
 @router.callback_query(F.data.startswith("order:"))
@@ -444,7 +681,7 @@ async def show_profile(callback: types.CallbackQuery, state: FSMContext):
     else:
         lines.append("Данные не заполнены")
     lines.append("\nНажмите кнопку чтобы изменить (X — удалить):")
-    await callback.message.edit_text("\n".join(lines), reply_markup=_profile_kb(p))
+    await safe_edit(callback, "\n".join(lines), reply_markup=_profile_kb(p))
     await callback.answer()
 
 
@@ -569,13 +806,22 @@ async def save_card_phone(message: types.Message, state: FSMContext):
 @router.callback_query(F.data.startswith("paid:"))
 async def client_confirm_payment(callback: types.CallbackQuery, bot: Bot):
     order_id = callback.data.split(":", 1)[1]
-    await callback.message.edit_text(
-        callback.message.text + "\n\n✅ Вы подтвердили оплату.",
-        reply_markup=None,
-    )
+    if callback.message.photo:
+        await callback.message.edit_caption(
+            caption=(callback.message.caption or "") + "\n\n✅ Вы подтвердили оплату.",
+            reply_markup=None,
+        )
+    else:
+        await callback.message.edit_text(
+            callback.message.text + "\n\n✅ Вы подтвердили оплату.",
+            reply_markup=None,
+        )
     await callback.answer()
     await callback.message.answer(
-        "⏳ Сейчас проверим ваш перевод.\nПроверка занимает около 10 минут."
+        "⏳ Сейчас проверим ваш перевод.\nПроверка занимает около 10 минут.",
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
+            [types.InlineKeyboardButton(text="✉️ Написать менеджеру", callback_data=f"msg:{order_id}")],
+        ]),
     )
 
     # Уведомляем менеджера с кнопкой подтверждения
@@ -597,11 +843,17 @@ async def client_confirm_payment(callback: types.CallbackQuery, bot: Bot):
 @router.callback_query(F.data.startswith("yuan_received:"))
 async def yuan_received(callback: types.CallbackQuery, bot: Bot):
     order_id = callback.data.split(":", 1)[1]
+    order = db.get_order(order_id)
+    if not order or order["status"] == "completed":
+        await callback.answer("Получение уже подтверждено.", show_alert=True)
+        return
     db.update_order_status(order_id, "completed")
     await callback.message.edit_text(
-        f"✅ Отлично! Получение юаней по заявке #{order_id} подтверждено.\n"
+        f"✅ Отлично! Получение юаней подтверждено.\n"
         f"Спасибо, что воспользовались нашим сервисом!",
-        reply_markup=kb.order_detail_kb(order_id),
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
+            [types.InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_menu")],
+        ]),
     )
     await callback.answer()
 
@@ -623,10 +875,13 @@ async def yuan_missing(callback: types.CallbackQuery):
     manager = db.get_setting("main_manager", "bulievich")
     # Сообщение с кнопками остаётся — отправляем новое сообщение ниже
     await callback.message.answer(
-        f"❌ Средства по заявке #{order_id} не поступили?\n\n"
+        f"❌ Средства не поступили?\n\n"
         f"Свяжитесь с менеджером через бота.\n"
         f"Если менеджер не отвечает — напишите главному менеджеру: @{manager}",
-        reply_markup=kb.order_detail_kb(order_id),
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
+            [types.InlineKeyboardButton(text="✅ Подтвердить получение", callback_data=f"yuan_received:{order_id}")],
+            [types.InlineKeyboardButton(text="✉️ Написать менеджеру", callback_data=f"msg:{order_id}")],
+        ]),
     )
     await callback.answer()
 
@@ -646,8 +901,8 @@ async def start_client_message(callback: types.CallbackQuery, state: FSMContext)
 
     await state.set_state(OrderFSM.waiting_message)
     await state.update_data(relay_order_id=order_id)
-    await callback.message.edit_text(
-        f"Напишите сообщение менеджеру по заявке #{order_id}:\n"
+    await callback.message.answer(
+        f"Напишите сообщение менеджеру:\n"
         "(Отправьте текст или /cancel для отмены)"
     )
     await callback.answer()
@@ -672,28 +927,75 @@ async def relay_client_to_manager(message: types.Message, state: FSMContext, bot
         await message.answer("Заявка не найдена.", reply_markup=_main_menu())
         return
 
-    db.save_message(order_id, message.from_user.id, message.text or "")
-    await state.clear()
-    await message.answer("Сообщение отправлено менеджеру.", reply_markup=_main_menu())
+    photo_file_id = message.photo[-1].file_id if message.photo else None
+    db.save_message(order_id, message.from_user.id, message.text or message.caption or "[фото]", file_id=photo_file_id)
+    await state.set_state(OrderFSM.waiting_message)
+    await message.answer(
+        "Напишите сообщение менеджеру:\n"
+        "(Отправьте текст или фото, /cancel для отмены)\n\n"
+        "✅ Сообщение отправлено менеджеру."
+    )
+
+    reply_kb = kb.manager_status_kb(order_id, show_req=False)
+    caption_prefix = f"Сообщение от клиента:\n\n"
+
+    async def _send_to(tg_id):
+        try:
+            if message.photo:
+                await bot.send_photo(
+                    tg_id,
+                    photo=message.photo[-1].file_id,
+                    caption=caption_prefix + (message.caption or ""),
+                    reply_markup=reply_kb,
+                )
+            else:
+                await bot.send_message(
+                    tg_id,
+                    caption_prefix + (message.text or ""),
+                    reply_markup=reply_kb,
+                )
+        except Exception:
+            pass
 
     manager_id = order["manager_id"]
     if manager_id:
+        await _send_to(manager_id)
+    else:
+        for mgr in db.get_all_active_managers():
+            await _send_to(mgr["tg_id"])
+
+
+# ---- Подтверждение условий клиентом ----
+
+@router.message(F.text == "+")
+async def client_confirm_terms(message: types.Message, bot: Bot):
+    order = db.get_pending_terms_order(message.from_user.id)
+    if not order:
+        return
+    order_id = str(order["id"])
+    db.confirm_order_terms(order_id)
+    await message.answer(
+        "✅ Условия приняты. Ожидайте реквизиты для оплаты.\nБудьте на связи — менеджер скоро напишет!",
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
+            [types.InlineKeyboardButton(text="✉️ Написать менеджеру", callback_data=f"msg:{order_id}")],
+        ]),
+    )
+
+    # Обновляем сообщение менеджера — добавляем кнопку реквизитов
+    if order["manager_id"] and order["manager_msg_id"] and order["manager_chat_id"]:
         try:
-            await bot.send_message(
-                manager_id,
-                f"Сообщение от клиента по заявке #{order_id}:\n\n{message.text}",
-                reply_markup=kb.manager_status_kb(order_id),
+            is_cny_rub = order["currency_from"] == "CNY"
+            await bot.edit_message_reply_markup(
+                chat_id=order["manager_chat_id"],
+                message_id=order["manager_msg_id"],
+                reply_markup=kb.manager_status_kb(order_id, show_qr=False, show_req=True, send_qr_mode=is_cny_rub),
             )
         except Exception:
             pass
-    else:
-        # Если менеджер не назначен — шлём всем менеджерам
-        managers = db.get_all_active_managers()
-        for mgr in managers:
-            try:
-                await bot.send_message(
-                    mgr["tg_id"],
-                    f"Сообщение от клиента по заявке #{order_id}:\n\n{message.text}",
-                )
-            except Exception:
-                pass
+        try:
+            await bot.send_message(
+                order["manager_id"],
+                f"✅ Клиент подтвердил условия по заявке #{order_id}. Можно скидывать реквизиты.",
+            )
+        except Exception:
+            pass

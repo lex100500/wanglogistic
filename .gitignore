@@ -1,6 +1,10 @@
 node_modules/
 data/*.db
+data/*.db-shm
+data/*.db-wal
+data/fsm_states.json
 __pycache__/
 *.pyc
 .env
 venv/
+bot/config.py
