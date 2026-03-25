@@ -133,13 +133,16 @@ async def take_order(callback: types.CallbackQuery, bot: Bot):
     await callback.answer("Вы взяли заказ")
 
     # Уведомление клиенту
+    bank = order["bank"] if "bank" in order.keys() and order["bank"] else None
+    bank_line = f"\n\n🏦 Убедитесь, что переводите именно с банка: <b>{html.escape(str(bank))}</b>" if bank else ""
     try:
         await bot.send_message(
             order["user_id"],
             "⚠️ ВАЖНО: Ответственность за корректность платежа полностью лежит на вас. "
             "Перед переводом внимательно проверяйте реквизиты, банк и сумму. "
-            "Возврат денежных средств НЕВОЗМОЖЕН!!!\n\n"
+            f"Возврат денежных средств НЕВОЗМОЖЕН!!!{bank_line}\n\n"
             "Для подтверждения согласия с условиями напишите «+»!",
+            parse_mode="HTML",
             reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
                 [types.InlineKeyboardButton(text="❌ Отменить заявку", callback_data=f"client_cancel:{order_id}")],
             ]),
