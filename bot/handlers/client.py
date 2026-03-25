@@ -484,7 +484,8 @@ async def enter_amount(message: types.Message, state: FSMContext):
         extra += f"Банк: {bank}\n"
     if pay_method:
         method_name = "WeChat Pay" if pay_method == "wechat" else "Alipay"
-        extra += f"Получение: {method_name}\n"
+        label = "Вы отправляете с" if data.get("cur_from") == "CNY" else "Получение"
+        extra += f"{label}: {method_name}\n"
 
     await message.answer(
         f"Вы отдаёте: {amount} {data['cur_from']}\n"
