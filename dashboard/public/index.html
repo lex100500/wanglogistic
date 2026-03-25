@@ -337,6 +337,8 @@ input[type=number] { -moz-appearance: textfield; }
 }
 .btn-danger:hover { background: rgba(227,26,26,0.25); }
 .btn-sm { padding: 8px 16px; font-size: 12px; }
+.mgr-period-btn { padding: 6px 14px; font-size: 13px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #a09090; }
+.mgr-period-btn.active { background: rgba(1,181,116,0.15); border-color: #01B574; color: #01B574; }
 .btn-primary:active { transform: translateY(1px); box-shadow: 0 2px 8px rgba(229,62,0,0.3); }
 @keyframes spin { from { display:inline-block; transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .btn-spinning { animation: spin 0.6s linear; }
@@ -726,9 +728,21 @@ input[type=number] { -moz-appearance: textfield; }
   <div class="page" id="page-managers">
     <div class="page-title">Менеджеры</div>
     <div class="page-subtitle">Команда и статистика</div>
-    <div style="margin-bottom: 20px;">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:20px;">
       <button class="btn btn-primary" onclick="showAddManager()">+ Добавить менеджера</button>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto;">
+        <button class="btn mgr-period-btn active" data-period="all" onclick="setMgrPeriod('all',this)">Всё время</button>
+        <button class="btn mgr-period-btn" data-period="day" onclick="setMgrPeriod('day',this)">День</button>
+        <button class="btn mgr-period-btn" data-period="week" onclick="setMgrPeriod('week',this)">Неделя</button>
+        <button class="btn mgr-period-btn" data-period="month" onclick="setMgrPeriod('month',this)">Месяц</button>
+        <div style="display:flex;align-items:center;gap:4px;">
+          <input type="date" id="mgr-from" onchange="setMgrPeriod('custom',null)" style="padding:6px 8px;background:#1a1a2e;border:1px solid #2d5a2d;border-radius:6px;color:#e0e0e0;font-size:13px;">
+          <span style="color:#666;">—</span>
+          <input type="date" id="mgr-to" onchange="setMgrPeriod('custom',null)" style="padding:6px 8px;background:#1a1a2e;border:1px solid #2d5a2d;border-radius:6px;color:#e0e0e0;font-size:13px;">
+        </div>
+      </div>
     </div>
+    <div id="mgr-period-summary" style="display:none;margin-bottom:16px;"></div>
     <div class="manager-grid" id="managers-list"></div>
   </div>
 
@@ -1348,11 +1362,53 @@ function closeModal() { document.getElementById('order-modal').classList.remove(
 function closeManagerModal() { document.getElementById('manager-modal').classList.remove('active'); }
 
 // Managers
+let _mgrPeriod = 'all';
+function setMgrPeriod(period, btn) {
+  _mgrPeriod = period;
+  document.querySelectorAll('.mgr-period-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  if (period === 'custom') {
+    document.querySelectorAll('.mgr-period-btn').forEach(b => b.classList.remove('active'));
+  }
+  loadManagers();
+}
+function getMgrDateRange() {
+  const today = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  if (_mgrPeriod === 'day')   { const d = fmt(today); return [d, d]; }
+  if (_mgrPeriod === 'week')  { const d = new Date(today); d.setDate(d.getDate()-6); return [fmt(d), fmt(today)]; }
+  if (_mgrPeriod === 'month') { const d = new Date(today); d.setDate(d.getDate()-29); return [fmt(d), fmt(today)]; }
+  if (_mgrPeriod === 'custom') {
+    const f = document.getElementById('mgr-from').value;
+    const t = document.getElementById('mgr-to').value;
+    if (f && t) return [f, t];
+  }
+  return null;
+}
+
 async function loadManagers() {
   try {
-    const r = await fetch(api('/api/managers'));
+    const range = getMgrDateRange();
+    const qs = range ? `?from=${range[0]}&to=${range[1]}` : '';
+    const r = await fetch(api('/api/managers' + qs));
     const managers = await r.json();
     const list = document.getElementById('managers-list');
+    const summaryEl = document.getElementById('mgr-period-summary');
+    const range = getMgrDateRange();
+    if (range) {
+      const totalOrders = managers.reduce((s, m) => s + (m.period_orders || 0), 0);
+      const totalProfit = managers.reduce((s, m) => s + (m.period_profit || 0), 0);
+      const label = _mgrPeriod === 'day' ? 'за день' : _mgrPeriod === 'week' ? 'за неделю' : _mgrPeriod === 'month' ? 'за месяц' : `${range[0]} — ${range[1]}`;
+      summaryEl.style.display = 'block';
+      summaryEl.innerHTML = `<div class="glass-card" style="padding:12px 16px;display:flex;gap:24px;flex-wrap:wrap;align-items:center;">
+        <span style="color:#888;font-size:13px;">📊 Итого ${label}:</span>
+        <span style="color:#e0e0e0;font-size:14px;font-weight:600;">Заявок: <b>${totalOrders}</b></span>
+        <span style="font-size:14px;font-weight:600;color:${totalProfit >= 0 ? '#01B574' : '#FF4C4C'};">Прибыль: <b>${formatNum(totalProfit)} ₽</b></span>
+      </div>`;
+    } else {
+      summaryEl.style.display = 'none';
+    }
     if (managers.length === 0) {
       list.innerHTML = '<div style="color:#a09090;padding:40px;text-align:center;">Нет менеджеров</div>';
       return;
@@ -1395,6 +1451,11 @@ async function loadManagers() {
             <div class="lbl">Прибыль</div>
           </div>
         </div>
+        ${getMgrDateRange() ? `<div style="border-top:1px solid rgba(255,255,255,0.06);margin:8px -16px 0;padding:8px 16px 0;display:flex;gap:16px;font-size:12px;">
+          <span style="color:#888;">За период:</span>
+          <span style="color:#e0e0e0;">📦 ${m.period_orders || 0} заявок</span>
+          <span style="color:${(m.period_profit||0) >= 0 ? '#01B574' : '#FF4C4C'};">💰 ${formatNum(m.period_profit || 0)} ₽</span>
+        </div>` : ''}
         <div class="manager-card-footer">
           <button class="btn btn-sm" style="${toggleStyle}" onclick="toggleManager(${m.tg_id}, ${m.is_active ? 0 : 1})">${toggleText}</button>
           <button class="btn btn-danger btn-sm" onclick="removeManager(${m.tg_id})">Удалить</button>
