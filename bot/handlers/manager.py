@@ -738,12 +738,21 @@ async def enter_htx_rate(message: types.Message, state: FSMContext):
     show_qr = bool(order and order["currency_from"] == "RUB" and
                    ("pay_method" in order.keys()) and order["pay_method"])
 
-    if order and order["currency_from"] == "RUB" and order["offer_rate"]:
-        usdt_amount = order["amount"] / order["offer_rate"]
-        cny_bought  = usdt_amount * htx_rate
-        margin_cny  = round(cny_bought - order["amount_result"], 4)
-        margin_rub  = round(margin_cny * order["rate"], 2)
-        db.update_order_margin(order_id, round(usdt_amount, 6), round(cny_bought, 4), margin_cny, margin_rub)
+    if order and order["offer_rate"]:
+        if order["currency_from"] == "RUB":
+            # RUB→CNY: покупаем USDT за RUB, продаём USDT за CNY на HTX
+            usdt_amount = order["amount"] / order["offer_rate"]
+            cny_bought  = usdt_amount * htx_rate
+            margin_cny  = round(cny_bought - order["amount_result"], 4)
+            margin_rub  = round(margin_cny * order["rate"], 2)
+            db.update_order_margin(order_id, round(usdt_amount, 6), round(cny_bought, 4), margin_cny, margin_rub)
+        elif order["currency_from"] == "CNY":
+            # CNY→RUB: продаём CNY за USDT на HTX, продаём USDT за RUB
+            usdt_amount  = order["amount"] / order["offer_rate"]
+            rub_received = usdt_amount * htx_rate
+            margin_rub   = round(rub_received - order["amount_result"], 2)
+            margin_cny   = round(margin_rub / order["rate"], 4) if order["rate"] else 0
+            db.update_order_margin(order_id, round(usdt_amount, 6), round(rub_received, 2), margin_cny, margin_rub)
 
     is_cny_to_rub = order and order["currency_from"] == "CNY"
     card_text = _client_card_text(order) if is_cny_to_rub else ""
