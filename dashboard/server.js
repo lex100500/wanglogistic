@@ -580,6 +580,13 @@ app.delete('/api/managers/:id', (req, res) => {
 
 app.get('/api/managers/:id/orders', (req, res) => {
   try {
+    const { from, to } = req.query;
+    let dateFilter = '';
+    const params = [req.params.id];
+    if (from && to) {
+      dateFilter = ' AND o.created_at >= ? AND o.created_at <= ?';
+      params.push(from, to + ' 23:59:59');
+    }
     const orders = db.prepare(`
       SELECT o.id, o.amount, o.currency_from, o.currency_to,
              o.amount_result, o.rate, o.offer_rate, o.htx_rate,
@@ -588,17 +595,23 @@ app.get('/api/managers/:id/orders', (req, res) => {
              u.first_name as user_name, u.username as user_username
       FROM orders o
       LEFT JOIN users u ON o.user_id = u.tg_id
-      WHERE o.manager_id = ?
+      WHERE o.manager_id = ?` + dateFilter + `
       ORDER BY o.created_at DESC
-    `).all(req.params.id);
+    `).all(...params);
 
+    const statsParams = [req.params.id];
+    let statsDateFilter = '';
+    if (from && to) {
+      statsDateFilter = ' AND created_at >= ? AND created_at <= ?';
+      statsParams.push(from, to + ' 23:59:59');
+    }
     const stats = db.prepare(`
       SELECT
         COUNT(*) as total_orders,
         SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_orders,
         ROUND(COALESCE(SUM(CASE WHEN status = 'completed' THEN margin_rub END), 0), 2) as total_profit
-      FROM orders WHERE manager_id = ?
-    `).get(req.params.id);
+      FROM orders WHERE manager_id = ?` + statsDateFilter + `
+    `).get(...statsParams);
 
     res.json({ orders, stats });
   } catch (err) {

@@ -339,6 +339,8 @@ input[type=number] { -moz-appearance: textfield; }
 .btn-sm { padding: 8px 16px; font-size: 12px; }
 .mgr-period-btn { padding: 6px 14px; font-size: 13px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #a09090; }
 .mgr-period-btn.active { background: rgba(1,181,116,0.15); border-color: #01B574; color: #01B574; }
+.mgr-ord-period-btn { padding: 6px 14px; font-size: 13px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #a09090; }
+.mgr-ord-period-btn.active { background: rgba(1,181,116,0.15); border-color: #01B574; color: #01B574; }
 .btn-primary:active { transform: translateY(1px); box-shadow: 0 2px 8px rgba(229,62,0,0.3); }
 @keyframes spin { from { display:inline-block; transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .btn-spinning { animation: spin 0.6s linear; }
@@ -1014,7 +1016,18 @@ input[type=number] { -moz-appearance: textfield; }
   <div class="modal" style="max-width:980px;width:96%;">
     <button class="close-btn" onclick="closeManagerOrdersModal()">&times;</button>
     <h2>Заявки: <span id="mgr-orders-name"></span></h2>
-    <div id="mgr-orders-stats" style="display:flex;gap:20px;margin:16px 0;flex-wrap:wrap;"></div>
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:12px 0;">
+      <button class="btn mgr-ord-period-btn active" data-period="all" onclick="setMgrOrdPeriod('all',this)">Всё время</button>
+      <button class="btn mgr-ord-period-btn" data-period="day" onclick="setMgrOrdPeriod('day',this)">День</button>
+      <button class="btn mgr-ord-period-btn" data-period="week" onclick="setMgrOrdPeriod('week',this)">Неделя</button>
+      <button class="btn mgr-ord-period-btn" data-period="month" onclick="setMgrOrdPeriod('month',this)">Месяц</button>
+      <div style="display:flex;align-items:center;gap:4px;">
+        <input type="date" id="mgr-ord-from" onchange="setMgrOrdPeriod('custom',null)" style="padding:6px 8px;background:#1a1a2e;border:1px solid #2d5a2d;border-radius:6px;color:#e0e0e0;font-size:13px;">
+        <span style="color:#666;">—</span>
+        <input type="date" id="mgr-ord-to" onchange="setMgrOrdPeriod('custom',null)" style="padding:6px 8px;background:#1a1a2e;border:1px solid #2d5a2d;border-radius:6px;color:#e0e0e0;font-size:13px;">
+      </div>
+    </div>
+    <div id="mgr-orders-stats" style="display:flex;gap:20px;margin:8px 0 16px;flex-wrap:wrap;"></div>
     <div class="filters-row" style="margin-bottom:12px;">
       <input type="text" id="mgr-orders-search" placeholder="🔍 Поиск по ID, клиенту, статусу..." oninput="filterMgrOrders()" style="flex:1;min-width:180px;">
       <select id="mgr-orders-status" onchange="filterMgrOrders()" style="min-width:140px;">
@@ -1509,6 +1522,56 @@ async function removeManager(id) {
 
 // Manager Orders Modal
 let _mgrAllOrders = [];
+let _mgrOrdPeriod = 'all';
+let _mgrOrdCurrentId = null;
+let _mgrOrdCurrentName = '';
+
+function getMgrOrdDateRange() {
+  const today = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  if (_mgrOrdPeriod === 'day')   { const d = fmt(today); return [d, d]; }
+  if (_mgrOrdPeriod === 'week')  { const d = new Date(today); d.setDate(d.getDate()-6); return [fmt(d), fmt(today)]; }
+  if (_mgrOrdPeriod === 'month') { const d = new Date(today); d.setDate(d.getDate()-29); return [fmt(d), fmt(today)]; }
+  if (_mgrOrdPeriod === 'custom') {
+    const f = document.getElementById('mgr-ord-from').value;
+    const t = document.getElementById('mgr-ord-to').value;
+    if (f && t) return [f, t];
+  }
+  return null;
+}
+
+function setMgrOrdPeriod(period, btn) {
+  _mgrOrdPeriod = period;
+  document.querySelectorAll('.mgr-ord-period-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  if (period === 'custom') {
+    document.querySelectorAll('.mgr-ord-period-btn').forEach(b => b.classList.remove('active'));
+  }
+  if (_mgrOrdCurrentId) loadManagerOrders(_mgrOrdCurrentId, _mgrOrdCurrentName);
+}
+
+async function loadManagerOrders(managerId, managerName) {
+  _mgrOrdCurrentId = managerId;
+  _mgrOrdCurrentName = managerName;
+  document.getElementById('mgr-orders-name').textContent = managerName;
+  document.getElementById('mgr-orders-tbody').innerHTML =
+    '<tr><td colspan="11" style="text-align:center;padding:40px;color:#a09090;">Загрузка...</td></tr>';
+  try {
+    const range = getMgrOrdDateRange();
+    const qs = range ? `?from=${range[0]}&to=${range[1]}` : '';
+    const r = await fetch(api('/api/managers/' + managerId + '/orders' + qs));
+    const { orders, stats } = await r.json();
+    const periodLabel = _mgrOrdPeriod === 'day' ? 'за день' : _mgrOrdPeriod === 'week' ? 'за неделю' : _mgrOrdPeriod === 'month' ? 'за месяц' : _mgrOrdPeriod === 'custom' && range ? `${range[0]} — ${range[1]}` : 'за выбранный период';
+    document.getElementById('mgr-orders-stats').innerHTML = `
+      <div class="manager-stat"><div class="val">${stats.total_orders || 0}</div><div class="lbl">Заявок ${periodLabel}</div></div>
+      <div class="manager-stat"><div class="val">${stats.completed_orders || 0}</div><div class="lbl">Завершено</div></div>
+      <div class="manager-stat"><div class="val" style="color:#01B574;">${stats.total_profit ? formatNum(stats.total_profit) + ' ₽' : '—'}</div><div class="lbl">Прибыль ${periodLabel}</div></div>
+    `;
+    _mgrAllOrders = orders;
+    renderMgrOrders(orders);
+  } catch (e) { console.error(e); }
+}
 
 function renderMgrOrders(orders) {
   if (!orders.length) {
@@ -1549,26 +1612,18 @@ function filterMgrOrders() {
 
 async function showManagerOrders(managerId, managerName) {
   _mgrAllOrders = [];
+  _mgrOrdPeriod = 'all';
+  _mgrOrdCurrentId = managerId;
+  _mgrOrdCurrentName = managerName;
   document.getElementById('mgr-orders-search').value = '';
   document.getElementById('mgr-orders-status').value = '';
-  document.getElementById('mgr-orders-name').textContent = managerName;
-  document.getElementById('mgr-orders-tbody').innerHTML =
-    '<tr><td colspan="11" style="text-align:center;padding:40px;color:#a09090;">Загрузка...</td></tr>';
+  document.getElementById('mgr-ord-from').value = '';
+  document.getElementById('mgr-ord-to').value = '';
+  document.querySelectorAll('.mgr-ord-period-btn').forEach(b => b.classList.remove('active'));
+  const allBtn = document.querySelector('.mgr-ord-period-btn[data-period="all"]');
+  if (allBtn) allBtn.classList.add('active');
   document.getElementById('manager-orders-modal').classList.add('active');
-  try {
-    const r = await fetch(api('/api/managers/' + managerId + '/orders'));
-    const { orders, stats } = await r.json();
-
-    document.getElementById('mgr-orders-stats').innerHTML = `
-      <div class="manager-stat"><div class="val">${stats.total_orders || 0}</div><div class="lbl">Всего заявок</div></div>
-      <div class="manager-stat"><div class="val">${stats.completed_orders || 0}</div><div class="lbl">Завершено</div></div>
-      <div class="manager-stat"><div class="val" style="color:#01B574;">${stats.total_profit ? formatNum(stats.total_profit) + ' ₽' : '\u2014'}</div><div class="lbl">Суммарная прибыль</div></div>
-    `;
-
-    _mgrAllOrders = orders;
-    renderMgrOrders(orders);
-    if (!orders.length) return;
-  } catch (e) { console.error(e); }
+  loadManagerOrders(managerId, managerName);
 }
 
 function closeManagerOrdersModal() {
