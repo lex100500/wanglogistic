@@ -49,6 +49,16 @@ def init_db():
             status TEXT NOT NULL DEFAULT 'new',
             manager_id INTEGER,
             offer_rate REAL,
+            htx_rate REAL,
+            usdt_amount REAL,
+            cny_bought REAL,
+            margin_cny REAL,
+            margin_rub REAL,
+            terms_confirmed INTEGER DEFAULT 0,
+            manager_msg_id INTEGER,
+            manager_chat_id INTEGER,
+            pay_method TEXT,
+            bank TEXT,
             created_at TEXT DEFAULT (datetime('now')),
             updated_at TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (user_id) REFERENCES users(tg_id)
@@ -67,6 +77,7 @@ def init_db():
             order_id INTEGER NOT NULL,
             sender_id INTEGER NOT NULL,
             text TEXT NOT NULL,
+            file_id TEXT,
             created_at TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (order_id) REFERENCES orders(id)
         );
@@ -113,7 +124,7 @@ def init_db():
                 "usdt_amount REAL", "cny_bought REAL", "margin_cny REAL", "margin_rub REAL",
                 "terms_confirmed INTEGER DEFAULT 0",
                 "manager_msg_id INTEGER", "manager_chat_id INTEGER",
-                "pay_method TEXT"):
+                "pay_method TEXT", "bank TEXT"):
         try:
             conn.execute(f"ALTER TABLE orders ADD COLUMN {col}")
         except Exception:
