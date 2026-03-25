@@ -141,9 +141,10 @@ def confirm_payment_kb(order_id: str) -> InlineKeyboardMarkup:
     ])
 
 
-def manager_yuan_sent_kb(order_id: str, show_qr: bool = False) -> InlineKeyboardMarkup:
+def manager_yuan_sent_kb(order_id: str, show_qr: bool = False, is_rub: bool = False) -> InlineKeyboardMarkup:
+    label = "✅ Рубли отправлены клиенту" if is_rub else "✅ Юани отправлены клиенту"
     buttons = [
-        [InlineKeyboardButton(text="✅ Юани отправлены клиенту", callback_data=f"yuan_sent:{order_id}")],
+        [InlineKeyboardButton(text=label, callback_data=f"yuan_sent:{order_id}")],
         [InlineKeyboardButton(text="✉️ Написать клиенту", callback_data=f"mgr_msg:{order_id}")],
     ]
     if show_qr:

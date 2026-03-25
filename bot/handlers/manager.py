@@ -713,7 +713,7 @@ async def skip_htx_rate(callback: types.CallbackQuery, state: FSMContext):
             "Когда отправите рубли клиенту — нажмите кнопку ниже." + card_text if order and order["currency_from"] == "CNY"
             else "Когда отправите юани клиенту — нажмите кнопку ниже.",
             parse_mode="HTML",
-            reply_markup=kb.manager_yuan_sent_kb(order_id, show_qr=show_qr),
+            reply_markup=kb.manager_yuan_sent_kb(order_id, show_qr=show_qr, is_rub=bool(order and order["currency_from"] == "CNY")),
         )
 
 
@@ -763,7 +763,7 @@ async def enter_htx_rate(message: types.Message, state: FSMContext):
         f"Курс USDT: {order['offer_rate'] if order and order['offer_rate'] else '—'}\n"
         f"Курс RUB: {htx_rate}\n\n{action_text}{card_text}",
         parse_mode="HTML",
-        reply_markup=kb.manager_yuan_sent_kb(order_id, show_qr=show_qr),
+        reply_markup=kb.manager_yuan_sent_kb(order_id, show_qr=show_qr, is_rub=is_cny_to_rub),
     )
 
 

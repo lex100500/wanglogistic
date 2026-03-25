@@ -258,7 +258,7 @@ async def direction_selected(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer()
         return
 
-    # CNY→RUB: нужна карта для получения рублей
+    # CNY→RUB: нужна карта для получения рублей + выбор откуда отправляют
     if cur_from == "CNY":
         profile = db.get_profile(callback.from_user.id)
         if not profile or not profile["card_number"]:
@@ -269,6 +269,18 @@ async def direction_selected(callback: types.CallbackQuery, state: FSMContext):
             )
             await callback.answer()
             return
+        await state.set_state(OrderFSM.waiting_pay_method)
+        await state.update_data(
+            cur_from=cur_from, cur_to=cur_to, rate=rate,
+            flow_msg_id=callback.message.message_id,
+            flow_chat_id=callback.message.chat.id,
+        )
+        await callback.message.edit_text(
+            "Откуда вы будете отправлять юани?",
+            reply_markup=kb.pay_method_kb(),
+        )
+        await callback.answer()
+        return
 
     await state.set_state(OrderFSM.waiting_amount)
     await state.update_data(
@@ -308,6 +320,15 @@ async def receipt_confirmed(callback: types.CallbackQuery, state: FSMContext):
 async def pay_method_selected(callback: types.CallbackQuery, state: FSMContext):
     method = callback.data.split(":", 1)[1]
     await state.update_data(pay_method=method)
+    data = await state.get_data()
+
+    # CNY→RUB: после выбора метода сразу ввод суммы
+    if data.get("cur_from") == "CNY":
+        await state.set_state(OrderFSM.waiting_amount)
+        await callback.message.edit_text(f"Введите сумму в CNY:")
+        await callback.answer()
+        return
+
     await state.set_state(OrderFSM.waiting_bank)
     await callback.message.edit_text(
         "Выберите банк с которого вы будете производить перевод:",
