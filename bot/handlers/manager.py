@@ -490,13 +490,20 @@ async def _show_req_preview(state: FSMContext, holder, email, offer_rate, msg):
     if offer_rate:
         lines.append(f"Курс USDT: <code>{html.escape(str(offer_rate))}</code>")
 
+    client_user_id = data.get("req_user_id")
+    write_btn = []
+    if client_user_id:
+        write_btn = [types.InlineKeyboardButton(text="✉️ Написать клиенту", url=f"tg://user?id={client_user_id}")]
+
+    keyboard = [[types.InlineKeyboardButton(text="✅ Подтвердить и отправить", callback_data="req_confirm_send")]]
+    if write_btn:
+        keyboard.append(write_btn)
+    keyboard.append([types.InlineKeyboardButton(text="✏️ Изменить", callback_data="req_confirm_edit")])
+
     await msg.answer(
         "\n".join(lines),
         parse_mode="HTML",
-        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="✅ Подтвердить и отправить", callback_data="req_confirm_send")],
-            [types.InlineKeyboardButton(text="✏️ Изменить", callback_data="req_confirm_edit")],
-        ]),
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=keyboard),
     )
 
 
@@ -528,7 +535,8 @@ async def _send_requisites(bot: Bot, state: FSMContext, holder, email, offer_rat
     if holder:
         text += f"Получатель: <code>{html.escape(str(holder))}</code>\n"
 
-    is_tbank = req_bank == "Т-Банк"
+    client_bank = order["bank"] if order and "bank" in order.keys() else None
+    is_tbank = client_bank == "Т-Банк"
     if is_tbank and email:
         text += f"\n📧 Адрес почты: <code>{html.escape(str(email))}</code>\n⚠️ Отправьте на неё чек ОТ ИМЕНИ БАНКА!!!\n"
     elif not is_tbank:
@@ -558,7 +566,9 @@ async def _after_holder(state: FSMContext, holder, msg, is_edit=False):
     """После ФИО: Т-Банк → спрашиваем почту, другие → сразу курс USDT."""
     await state.update_data(req_holder=holder)
     data = await state.get_data()
-    if data.get("req_bank") == "Т-Банк":
+    order = db.get_order(data.get("req_order_id", ""))
+    client_bank = order["bank"] if order and "bank" in order.keys() else None
+    if client_bank == "Т-Банк":
         await state.set_state(ManagerFSM.waiting_req_email)
         if is_edit:
             await msg.edit_text("ФИО пропущено.")
