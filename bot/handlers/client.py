@@ -664,7 +664,7 @@ async def order_detail(callback: types.CallbackQuery):
         f"Курс: {order['rate']}\n"
         f"Статус: {st}\n"
         f"Создана: {order['created_at']}",
-        reply_markup=kb.order_detail_kb(order_id),
+        reply_markup=kb.order_detail_kb(order_id, closed=order["status"] in ("completed", "cancelled")),
     )
     await callback.answer()
 

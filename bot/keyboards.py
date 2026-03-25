@@ -30,11 +30,12 @@ def confirm_order_kb() -> InlineKeyboardMarkup:
     ])
 
 
-def order_detail_kb(order_id: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✉️ Написать менеджеру", callback_data=f"msg:{order_id}")],
-        [InlineKeyboardButton(text="◀️ Назад", callback_data="my_orders")],
-    ])
+def order_detail_kb(order_id: str, closed: bool = False) -> InlineKeyboardMarkup:
+    rows = []
+    if not closed:
+        rows.append([InlineKeyboardButton(text="✉️ Написать менеджеру", callback_data=f"msg:{order_id}")])
+    rows.append([InlineKeyboardButton(text="◀️ Назад", callback_data="my_orders")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def bank_select_kb() -> InlineKeyboardMarkup:
