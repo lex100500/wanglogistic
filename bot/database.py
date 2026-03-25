@@ -341,6 +341,7 @@ def get_profile(tg_id: int) -> Optional[sqlite3.Row]:
 
 def update_profile(tg_id: int, **kwargs):
     conn = get_conn()
+    conn.execute("INSERT OR IGNORE INTO users (tg_id) VALUES (?)", (tg_id,))
     existing = conn.execute("SELECT 1 FROM profiles WHERE tg_id = ?", (tg_id,)).fetchone()
     if not existing:
         conn.execute("INSERT INTO profiles (tg_id) VALUES (?)", (tg_id,))
