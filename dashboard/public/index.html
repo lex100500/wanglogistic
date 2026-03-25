@@ -944,8 +944,19 @@ input[type=number] { -moz-appearance: textfield; }
           <div id="bc-result" style="margin-top:8px;font-size:13px;"></div>
         </div>
         <div>
+          <div style="background:#1a2a1a;border:1px solid #2d5a2d;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:#aaa;line-height:1.7;">
+            <div style="color:#6fcf6f;font-weight:600;margin-bottom:4px;">📌 Как добавить чат или топик</div>
+            <div>1. Открой нужный чат/канал в Telegram → скопируй ссылку на любое сообщение</div>
+            <div>2. Вставь ссылку в поле ниже — Chat ID и Топик ID заполнятся автоматически</div>
+            <div style="margin-top:6px;background:#0f1a0f;border-radius:4px;padding:6px 8px;font-family:monospace;color:#7fff7f;">
+              https://t.me/c/<span style="color:#ffcc44;">3734813630</span>/<span style="color:#66aaff;">2</span><br>
+              <span style="color:#888;font-family:sans-serif;font-size:11px;">→ Chat ID: -100<span style="color:#ffcc44;">3734813630</span> &nbsp; Топик: <span style="color:#66aaff;">2</span></span>
+            </div>
+            <div style="margin-top:6px;">Для обычного канала/группы: просто введи <code style="background:#0f1a0f;padding:1px 4px;border-radius:3px;color:#7fff7f;">@username</code> или числовой ID.</div>
+            <div style="margin-top:4px;color:#888;">⚠️ Бот должен быть администратором чата.</div>
+          </div>
           <div style="margin-bottom:8px;">
-            <input id="bc-new-link" placeholder="Ссылка t.me/c/... или ID чата / @username" oninput="parseBcLink(this.value)" style="width:100%;padding:8px;background:#1a1a2e;border:1px solid #2d5a2d;border-radius:6px;color:#e0e0e0;font-size:13px;box-sizing:border-box;">
+            <input id="bc-new-link" placeholder="Вставь ссылку t.me/c/... — поля заполнятся автоматически" oninput="parseBcLink(this.value)" style="width:100%;padding:8px;background:#1a1a2e;border:1px solid #2d5a2d;border-radius:6px;color:#e0e0e0;font-size:13px;box-sizing:border-box;">
           </div>
           <div style="display:flex;gap:8px;margin-bottom:12px;">
             <input id="bc-new-chat-id" placeholder="Chat ID" style="flex:2;padding:8px;background:#1a1a2e;border:1px solid #2d5a2d;border-radius:6px;color:#e0e0e0;font-size:13px;">
