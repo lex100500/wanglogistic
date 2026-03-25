@@ -189,10 +189,88 @@ db.exec(`CREATE TABLE IF NOT EXISTS banned_users (
   banned_at TEXT DEFAULT (datetime('now'))
 );`);
 
+// Migration: broadcast_chats
+db.exec(`CREATE TABLE IF NOT EXISTS broadcast_chats (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  chat_id TEXT UNIQUE NOT NULL,
+  title TEXT,
+  message_id TEXT,
+  auto_edit INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+);`);
+
 // Insert default rates if empty
 const rateCount = db.prepare('SELECT COUNT(*) as cnt FROM rates').get();
 if (rateCount.cnt === 0) {
   db.prepare('INSERT INTO rates (pair, buy_rate, sell_rate) VALUES (?, ?, ?)').run('RUB/CNY', 12.80, 13.20);
+}
+
+// ---- Broadcast helpers ----
+function resolveBroadcastText(template) {
+  const rate = db.prepare("SELECT * FROM rates WHERE pair = ?").get('RUB/CNY');
+  const buyRate  = rate ? Math.round(parseFloat(rate.buy_rate)  * 100) / 100 : 0;
+  const sellRate = rate ? Math.round(parseFloat(rate.sell_rate) * 100) / 100 : 0;
+  let tiers = [];
+  try { tiers = JSON.parse((db.prepare("SELECT value FROM settings WHERE key='volume_discounts'").get() || {}).value || '[]'); } catch(e) {}
+  const tiersMap = {};
+  tiers.forEach(t => { tiersMap[String(Math.floor(parseFloat(t.min_cny)))] = parseFloat(t.discount); });
+  let banks = [];
+  try { banks = JSON.parse((db.prepare("SELECT value FROM settings WHERE key='bank_discounts'").get() || {}).value || '[]'); } catch(e) {}
+  const banksMap = {};
+  banks.forEach(b => { banksMap[b.bank] = parseFloat(b.discount); });
+  let text = template;
+  text = text.replace(/\{тир:(\d+(?:\.\d+)?)\}/g, (_, n) => {
+    const key = String(Math.floor(parseFloat(n)));
+    const d = tiersMap[key];
+    return d !== undefined ? String(Math.round((buyRate - d) * 100) / 100) : `{тир:${n}}`;
+  });
+  text = text.replace(/\{банк:([^}]+)\}/g, (_, bank) => {
+    const d = banksMap[bank];
+    return d !== undefined ? String(Math.round(d * 100) / 100) : `{банк:${bank}}`;
+  });
+  text = text.replace(/\{курс\}/g, String(buyRate));
+  text = text.replace(/\{курс_продажи\}/g, String(sellRate));
+  return text;
+}
+
+function tgRequest(method, params) {
+  return new Promise((resolve, reject) => {
+    const { bot_token } = readConfig();
+    if (!bot_token) return reject(new Error('No bot token'));
+    const postData = JSON.stringify(params);
+    const options = {
+      hostname: 'api.telegram.org',
+      path: `/bot${bot_token}/${method}`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
+    };
+    const req = https.request(options, (r) => {
+      let data = '';
+      r.on('data', d => data += d);
+      r.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { resolve({ ok: false }); } });
+    });
+    req.on('error', reject);
+    req.write(postData);
+    req.end();
+  });
+}
+
+async function autoBroadcast() {
+  const autoSend = (db.prepare("SELECT value FROM settings WHERE key='broadcast_auto_send'").get() || {}).value === '1';
+  if (!autoSend) return;
+  const template = (db.prepare("SELECT value FROM settings WHERE key='broadcast_template'").get() || {}).value || '';
+  if (!template) return;
+  const text = resolveBroadcastText(template);
+  const chatsWithMsg = db.prepare('SELECT * FROM broadcast_chats WHERE auto_edit = 1 AND message_id IS NOT NULL').all();
+  const chatsNew     = db.prepare('SELECT * FROM broadcast_chats WHERE auto_edit = 1 AND message_id IS NULL').all();
+  for (const chat of chatsWithMsg) {
+    tgRequest('editMessageText', { chat_id: chat.chat_id, message_id: parseInt(chat.message_id), text, parse_mode: 'HTML', disable_web_page_preview: true }).catch(() => {});
+  }
+  for (const chat of chatsNew) {
+    tgRequest('sendMessage', { chat_id: chat.chat_id, text, parse_mode: 'HTML', disable_web_page_preview: true })
+      .then(r => { if (r.ok) db.prepare('UPDATE broadcast_chats SET message_id = ? WHERE id = ?').run(String(r.result.message_id), chat.id); })
+      .catch(() => {});
+  }
 }
 
 // ============ Helper: read/write config.py ============
@@ -646,6 +724,7 @@ app.put('/api/rates', (req, res) => {
     ).run(pair, buy_rate, sell_rate, 'dashboard');
 
     auditLog(getIp(req), 'RATES_CHANGE', `pair=${pair} buy=${buy_rate} sell=${sell_rate}`);
+    autoBroadcast().catch(() => {});
     const rate = db.prepare('SELECT * FROM rates WHERE pair = ?').get(pair);
     res.json(rate);
   } catch (err) {
@@ -741,6 +820,112 @@ app.post('/api/bot/restart', (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ============ API: Broadcast ============
+
+app.get('/api/broadcast/chats', (req, res) => {
+  try { res.json(db.prepare('SELECT * FROM broadcast_chats ORDER BY created_at DESC').all()); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/broadcast/chats', (req, res) => {
+  try {
+    const { chat_id, title } = req.body;
+    if (!chat_id) return res.status(400).json({ error: 'chat_id required' });
+    db.prepare('INSERT OR REPLACE INTO broadcast_chats (chat_id, title) VALUES (?, ?)').run(String(chat_id), title || String(chat_id));
+    auditLog(getIp(req), 'BROADCAST_CHAT_ADD', `chat_id=${chat_id}`);
+    res.json(db.prepare('SELECT * FROM broadcast_chats WHERE chat_id = ?').get(String(chat_id)));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/broadcast/chats/:id', (req, res) => {
+  try {
+    const { auto_edit, title, message_id } = req.body;
+    const sets = []; const params = [];
+    if (title      !== undefined) { sets.push('title = ?');      params.push(title); }
+    if (message_id !== undefined) { sets.push('message_id = ?'); params.push(message_id); }
+    if (auto_edit  !== undefined) { sets.push('auto_edit = ?');  params.push(auto_edit ? 1 : 0); }
+    if (!sets.length) return res.status(400).json({ error: 'nothing to update' });
+    params.push(req.params.id);
+    db.prepare(`UPDATE broadcast_chats SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+    res.json(db.prepare('SELECT * FROM broadcast_chats WHERE id = ?').get(req.params.id));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/broadcast/chats/:id', (req, res) => {
+  try {
+    db.prepare('DELETE FROM broadcast_chats WHERE id = ?').run(req.params.id);
+    auditLog(getIp(req), 'BROADCAST_CHAT_DELETE', `id=${req.params.id}`);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/broadcast/template', (req, res) => {
+  try {
+    const g = k => (db.prepare("SELECT value FROM settings WHERE key = ?").get(k) || {}).value;
+    res.json({ template: g('broadcast_template') || '', auto_send: g('broadcast_auto_send') === '1' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/broadcast/template', (req, res) => {
+  try {
+    const up = (k, v) => db.prepare("INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(k, v);
+    const { template, auto_send } = req.body;
+    if (template   !== undefined) up('broadcast_template', template);
+    if (auto_send  !== undefined) up('broadcast_auto_send', auto_send ? '1' : '0');
+    auditLog(getIp(req), 'BROADCAST_TEMPLATE_SAVE');
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/broadcast/send', async (req, res) => {
+  try {
+    const template = (db.prepare("SELECT value FROM settings WHERE key='broadcast_template'").get() || {}).value || '';
+    if (!template) return res.status(400).json({ error: 'Нет шаблона сообщения' });
+    const text = resolveBroadcastText(template);
+    const ids = req.body.chat_ids;
+    const chats = ids && ids.length
+      ? db.prepare(`SELECT * FROM broadcast_chats WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids)
+      : db.prepare('SELECT * FROM broadcast_chats').all();
+    const results = [];
+    for (const chat of chats) {
+      try {
+        const r = await tgRequest('sendMessage', { chat_id: chat.chat_id, text, parse_mode: 'HTML', disable_web_page_preview: true });
+        if (r.ok) {
+          const msgId = String(r.result.message_id);
+          db.prepare('UPDATE broadcast_chats SET message_id = ? WHERE id = ?').run(msgId, chat.id);
+          results.push({ id: chat.id, chat_id: chat.chat_id, ok: true, message_id: msgId });
+        } else {
+          results.push({ id: chat.id, chat_id: chat.chat_id, ok: false, error: r.description });
+        }
+      } catch(e) { results.push({ id: chat.id, chat_id: chat.chat_id, ok: false, error: e.message }); }
+    }
+    auditLog(getIp(req), 'BROADCAST_SEND', `chats=${chats.length}`);
+    res.json({ results, text });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/broadcast/edit', async (req, res) => {
+  try {
+    const template = (db.prepare("SELECT value FROM settings WHERE key='broadcast_template'").get() || {}).value || '';
+    if (!template) return res.status(400).json({ error: 'Нет шаблона сообщения' });
+    const text = resolveBroadcastText(template);
+    const ids = req.body.chat_ids;
+    const chats = ids && ids.length
+      ? db.prepare(`SELECT * FROM broadcast_chats WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids)
+      : db.prepare('SELECT * FROM broadcast_chats WHERE message_id IS NOT NULL').all();
+    const results = [];
+    for (const chat of chats) {
+      if (!chat.message_id) { results.push({ id: chat.id, ok: false, error: 'No message_id' }); continue; }
+      try {
+        const r = await tgRequest('editMessageText', { chat_id: chat.chat_id, message_id: parseInt(chat.message_id), text, parse_mode: 'HTML', disable_web_page_preview: true });
+        results.push({ id: chat.id, chat_id: chat.chat_id, ok: !!r.ok, error: r.description });
+      } catch(e) { results.push({ id: chat.id, chat_id: chat.chat_id, ok: false, error: e.message }); }
+    }
+    auditLog(getIp(req), 'BROADCAST_EDIT', `chats=${chats.length}`);
+    res.json({ results, text });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // SPA fallback

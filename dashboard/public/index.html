@@ -621,6 +621,9 @@ input[type=number] { -moz-appearance: textfield; }
     <div class="nav-item" data-page="rates">
       <span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span> Курсы
     </div>
+    <div class="nav-item" data-page="broadcast">
+      <span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.6a16 16 0 0 0 6 6l.96-.96a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg></span> Рассылка
+    </div>
     <div class="nav-item" data-page="settings">
       <span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span> Настройки
     </div>
@@ -743,6 +746,54 @@ input[type=number] { -moz-appearance: textfield; }
     </div>
     <div class="glass-card" id="rates-container">
       <div id="rates-content"></div>
+    </div>
+  </div>
+
+  <!-- Broadcast -->
+  <div class="page" id="page-broadcast">
+    <div class="page-title">Рассылка в каналы</div>
+    <div class="page-subtitle">Отправка и редактирование сообщений с курсом в Telegram-чатах</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;">
+      <!-- Template -->
+      <div class="glass-card">
+        <h2 style="margin-top:0;">📝 Шаблон сообщения</h2>
+        <div style="background:#1e2a1e;border:1px solid #2d5a2d;border-radius:8px;padding:12px 14px;margin-bottom:10px;font-size:13px;line-height:1.7;">
+          <div style="color:#6fcf6f;font-weight:600;margin-bottom:6px;">📌 Переменные</div>
+          <table style="border-collapse:collapse;width:100%;">
+            <tr><td style="color:#7fff7f;font-family:monospace;padding:2px 10px 2px 0;">{курс}</td><td style="color:#aaa;">курс покупки RUB/CNY</td></tr>
+            <tr><td style="color:#7fff7f;font-family:monospace;padding:2px 10px 2px 0;">{курс_продажи}</td><td style="color:#aaa;">курс продажи CNY/RUB</td></tr>
+            <tr><td style="color:#7fff7f;font-family:monospace;padding:2px 10px 2px 0;">{тир:400}</td><td style="color:#aaa;">курс − скидка тира 400</td></tr>
+            <tr><td style="color:#7fff7f;font-family:monospace;padding:2px 10px 2px 0;">{банк:Т-Банк}</td><td style="color:#aaa;">скидка банка</td></tr>
+          </table>
+        </div>
+        <textarea id="bc-template" rows="12" style="width:100%;font-family:monospace;font-size:13px;resize:vertical;background:#1a1a2e;color:#e0e0e0;border:1px solid #2d5a2d;border-radius:6px;padding:10px;box-sizing:border-box;" placeholder="📈 Актуальный курс WangLogistic..."></textarea>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;color:#ccc;font-size:14px;">
+            <input type="checkbox" id="bc-auto-send" style="width:16px;height:16px;accent-color:#4CAF50;">
+            Авто-обновление при изменении курса
+          </label>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <button class="btn btn-primary" onclick="saveBroadcastTemplate()" style="flex:1;">💾 Сохранить шаблон</button>
+          <button class="btn" onclick="previewBroadcast()" style="flex:1;background:#1e3a1e;border:1px solid #2d5a2d;color:#7fff7f;">👁 Предпросмотр</button>
+        </div>
+        <div id="bc-preview" style="display:none;margin-top:12px;background:#0f1a0f;border:1px solid #2d5a2d;border-radius:6px;padding:12px;white-space:pre-wrap;font-size:13px;color:#e0e0e0;"></div>
+        <div style="display:flex;gap:8px;margin-top:16px;">
+          <button class="btn btn-primary" onclick="broadcastSendAll()" style="flex:1;background:#1a3a6e;border-color:#3060a0;">📤 Отправить во все чаты</button>
+          <button class="btn btn-primary" onclick="broadcastEditAll()" style="flex:1;background:#1a3a6e;border-color:#3060a0;">✏️ Редактировать во всех</button>
+        </div>
+        <div id="bc-result" style="margin-top:10px;font-size:13px;"></div>
+      </div>
+      <!-- Chats -->
+      <div class="glass-card">
+        <h2 style="margin-top:0;">💬 Чаты для рассылки</h2>
+        <div style="display:flex;gap:8px;margin-bottom:16px;">
+          <input id="bc-new-chat-id" placeholder="ID или @username чата" style="flex:2;padding:8px;background:#1a1a2e;border:1px solid #2d5a2d;border-radius:6px;color:#e0e0e0;font-size:13px;">
+          <input id="bc-new-chat-title" placeholder="Название" style="flex:1;padding:8px;background:#1a1a2e;border:1px solid #2d5a2d;border-radius:6px;color:#e0e0e0;font-size:13px;">
+          <button class="btn btn-primary" onclick="addBroadcastChat()" style="padding:8px 14px;">+</button>
+        </div>
+        <div id="bc-chats-list"></div>
+      </div>
     </div>
   </div>
 
@@ -1013,6 +1064,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
     if (page === 'managers') loadManagers();
     if (page === 'rates') loadRates();
     if (page === 'settings') { loadSettings(); loadBannedUsers(); }
+    if (page === 'broadcast') loadBroadcast();
     if (window.innerWidth <= 768) {
       document.getElementById('sidebar').classList.remove('open');
       document.getElementById('sidebar-overlay').classList.remove('active');
@@ -1877,6 +1929,128 @@ const _origRenderVolRows = typeof renderVolRows !== 'undefined' ? renderVolRows 
 const spinnerObserver = new MutationObserver(() => initNumSpinners());
 spinnerObserver.observe(document.body, { childList: true, subtree: true });
 initNumSpinners();
+
+// ============ Broadcast ============
+let _bcChats = [];
+
+async function loadBroadcast() {
+  const [tmpl, chats] = await Promise.all([
+    fetch('/api/broadcast/template').then(r => r.json()),
+    fetch('/api/broadcast/chats').then(r => r.json()),
+  ]);
+  _bcChats = chats;
+  document.getElementById('bc-template').value = tmpl.template || '';
+  document.getElementById('bc-auto-send').checked = !!tmpl.auto_send;
+  renderBcChats();
+}
+
+function renderBcChats() {
+  const el = document.getElementById('bc-chats-list');
+  if (!_bcChats.length) { el.innerHTML = '<div style="color:#666;font-size:13px;">Нет добавленных чатов</div>'; return; }
+  el.innerHTML = _bcChats.map(c => `
+    <div style="border:1px solid #2a2a3e;border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#0f0f1e;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+        <div>
+          <div style="font-weight:600;color:#e0e0e0;">${escHtml(c.title || c.chat_id)}</div>
+          <div style="font-size:12px;color:#666;">${escHtml(c.chat_id)}</div>
+          <div style="font-size:12px;color:#888;margin-top:2px;">
+            ID сообщения: <input value="${escHtml(c.message_id || '')}" placeholder="нет" onchange="updateChatMsgId(${c.id}, this.value)"
+              style="background:#1a1a2e;border:1px solid #2d2d4e;border-radius:4px;color:#e0e0e0;padding:2px 6px;font-size:12px;width:90px;">
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:#ccc;white-space:nowrap;">
+            <input type="checkbox" ${c.auto_edit ? 'checked' : ''} onchange="toggleBcAutoEdit(${c.id}, this.checked)" style="accent-color:#4CAF50;">
+            Авто при курсе
+          </label>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-primary" onclick="broadcastSendOne(${c.id})" style="padding:4px 10px;font-size:12px;background:#1a3a6e;border-color:#3060a0;">📤</button>
+            <button class="btn btn-primary" onclick="broadcastEditOne(${c.id})" style="padding:4px 10px;font-size:12px;background:#1a3a6e;border-color:#3060a0;">✏️</button>
+            <button class="btn" onclick="deleteBcChat(${c.id})" style="padding:4px 10px;font-size:12px;background:#3a1a1a;border-color:#a03030;color:#ff8080;">🗑</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function saveBroadcastTemplate() {
+  const template = document.getElementById('bc-template').value;
+  const auto_send = document.getElementById('bc-auto-send').checked;
+  await fetch('/api/broadcast/template', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ template, auto_send }) });
+  showToast('Шаблон сохранён');
+}
+
+async function previewBroadcast() {
+  await saveBroadcastTemplate();
+  const r = await fetch('/api/broadcast/send', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ chat_ids: [] }) }).then(x => x.json());
+  const el = document.getElementById('bc-preview');
+  el.style.display = 'block';
+  el.textContent = r.text || r.error || '';
+}
+
+async function addBroadcastChat() {
+  const chat_id = document.getElementById('bc-new-chat-id').value.trim();
+  const title   = document.getElementById('bc-new-chat-title').value.trim();
+  if (!chat_id) return showToast('Введите ID чата');
+  await fetch('/api/broadcast/chats', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ chat_id, title }) });
+  document.getElementById('bc-new-chat-id').value = '';
+  document.getElementById('bc-new-chat-title').value = '';
+  await loadBroadcast();
+  showToast('Чат добавлен');
+}
+
+async function deleteBcChat(id) {
+  if (!confirm('Удалить чат?')) return;
+  await fetch(`/api/broadcast/chats/${id}`, { method: 'DELETE' });
+  await loadBroadcast();
+  showToast('Чат удалён');
+}
+
+async function toggleBcAutoEdit(id, val) {
+  await fetch(`/api/broadcast/chats/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ auto_edit: val }) });
+}
+
+async function updateChatMsgId(id, message_id) {
+  await fetch(`/api/broadcast/chats/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ message_id: message_id || null }) });
+  showToast('ID сообщения обновлён');
+}
+
+async function broadcastSendAll() {
+  await saveBroadcastTemplate();
+  const r = await fetch('/api/broadcast/send', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({}) }).then(x => x.json());
+  showBcResult(r);
+  await loadBroadcast();
+}
+
+async function broadcastEditAll() {
+  await saveBroadcastTemplate();
+  const r = await fetch('/api/broadcast/edit', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({}) }).then(x => x.json());
+  showBcResult(r);
+}
+
+async function broadcastSendOne(id) {
+  await saveBroadcastTemplate();
+  const r = await fetch('/api/broadcast/send', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ chat_ids: [id] }) }).then(x => x.json());
+  showBcResult(r);
+  await loadBroadcast();
+}
+
+async function broadcastEditOne(id) {
+  await saveBroadcastTemplate();
+  const r = await fetch('/api/broadcast/edit', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ chat_ids: [id] }) }).then(x => x.json());
+  showBcResult(r);
+}
+
+function showBcResult(r) {
+  const el = document.getElementById('bc-result');
+  if (r.error) { el.innerHTML = `<span style="color:#ff8080;">❌ ${escHtml(r.error)}</span>`; return; }
+  const lines = (r.results || []).map(x => `${x.ok ? '✅' : '❌'} ${escHtml(x.chat_id)}${x.error ? ' — ' + escHtml(x.error) : ''}`);
+  el.innerHTML = lines.join('<br>') || '<span style="color:#888;">Нет чатов</span>';
+  if (r.results && r.results.every(x => x.ok)) showToast('Отправлено');
+}
+
+function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 // Init + auto-refresh
 loadStats();
