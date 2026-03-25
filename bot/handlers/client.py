@@ -239,21 +239,6 @@ async def direction_selected(callback: types.CallbackQuery, state: FSMContext):
             has_wechat=bool(has_wechat), has_alipay=bool(has_alipay),
         )
 
-        # Проверяем опыт: есть ли завершённые покупки юаней
-        if db.get_user_completed_buy_count(callback.from_user.id) == 0:
-            await state.set_state(OrderFSM.waiting_receipt_confirm)
-            guide_url = db.get_setting("receipt_guide_url", "https://telegra.ph/test-cheki-03-23")
-            await callback.message.edit_text(
-                "⚠️ Прежде чем продолжить — важный вопрос!\n\n"
-                "Вы умеете отправлять чеки об оплате от имени банка?\n\n"
-                "Это необходимо для подтверждения перевода.\n"
-                "Если не знаете как — ознакомьтесь с гайдом по ссылке ниже, "
-                "после чего нажмите «Да, умею».",
-                reply_markup=kb.receipt_confirm_kb(guide_url),
-            )
-            await callback.answer()
-            return
-
         await _continue_buy_flow(callback.message, state, bool(has_wechat), bool(has_alipay))
         await callback.answer()
         return
@@ -312,7 +297,9 @@ async def _continue_buy_flow(message, state: FSMContext, has_wechat: bool, has_a
 @router.callback_query(F.data == "receipt_yes", OrderFSM.waiting_receipt_confirm)
 async def receipt_confirmed(callback: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    await _continue_buy_flow(callback.message, state, data["has_wechat"], data["has_alipay"])
+    discount_note = f"\n🎁 {data.get('bank')}: скидка −{data.get('bank_discount')} на курс" if data.get("bank_discount") else ""
+    await state.set_state(OrderFSM.waiting_amount)
+    await callback.message.edit_text(f"Введите сумму в {data['cur_from']}:{discount_note}")
     await callback.answer()
 
 
@@ -393,6 +380,22 @@ async def bank_selected(callback: types.CallbackQuery, state: FSMContext):
         flow_msg_id=callback.message.message_id,
         flow_chat_id=callback.message.chat.id,
     )
+
+    # Показываем предупреждение о чеках только для Т-Банка и только если нет опыта
+    if bank == "Т-Банк" and db.get_user_completed_bank_count(callback.from_user.id, "Т-Банк") == 0:
+        await state.set_state(OrderFSM.waiting_receipt_confirm)
+        guide_url = db.get_setting("receipt_guide_url", "https://telegra.ph/test-cheki-03-23")
+        await callback.message.edit_text(
+            "⚠️ Прежде чем продолжить — важный вопрос!\n\n"
+            "Вы умеете отправлять чеки об оплате от имени банка?\n\n"
+            "Это необходимо для подтверждения перевода.\n"
+            "Если не знаете как — ознакомьтесь с гайдом по ссылке ниже, "
+            "после чего нажмите «Да, умею».",
+            reply_markup=kb.receipt_confirm_kb(guide_url),
+        )
+        await callback.answer()
+        return
+
     await state.set_state(OrderFSM.waiting_amount)
     await callback.message.edit_text(f"Введите сумму в {data['cur_from']}:{discount_note}")
     await callback.answer()

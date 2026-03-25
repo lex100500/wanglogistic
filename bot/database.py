@@ -253,6 +253,16 @@ def get_user_completed_buy_count(user_id: int) -> int:
     return row["cnt"] if row else 0
 
 
+def get_user_completed_bank_count(user_id: int, bank: str) -> int:
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT COUNT(*) as cnt FROM orders WHERE user_id = ? AND bank = ? AND currency_from = 'RUB' AND status = 'completed'",
+        (user_id, bank),
+    ).fetchone()
+    conn.close()
+    return row["cnt"] if row else 0
+
+
 def get_user_orders(user_id: int) -> list:
     conn = get_conn()
     rows = conn.execute(
