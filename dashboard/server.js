@@ -195,9 +195,11 @@ db.exec(`CREATE TABLE IF NOT EXISTS broadcast_chats (
   chat_id TEXT UNIQUE NOT NULL,
   title TEXT,
   message_id TEXT,
+  thread_id TEXT,
   auto_edit INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now'))
 );`);
+try { db.exec('ALTER TABLE broadcast_chats ADD COLUMN thread_id TEXT'); } catch(e) {}
 
 // Insert default rates if empty
 const rateCount = db.prepare('SELECT COUNT(*) as cnt FROM rates').get();
@@ -264,10 +266,13 @@ async function autoBroadcast() {
   const chatsWithMsg = db.prepare('SELECT * FROM broadcast_chats WHERE auto_edit = 1 AND message_id IS NOT NULL').all();
   const chatsNew     = db.prepare('SELECT * FROM broadcast_chats WHERE auto_edit = 1 AND message_id IS NULL').all();
   for (const chat of chatsWithMsg) {
-    tgRequest('editMessageText', { chat_id: chat.chat_id, message_id: parseInt(chat.message_id), text, parse_mode: 'HTML', disable_web_page_preview: true }).catch(() => {});
+    const p = { chat_id: chat.chat_id, message_id: parseInt(chat.message_id), text, parse_mode: 'HTML', disable_web_page_preview: true };
+    tgRequest('editMessageText', p).catch(() => {});
   }
   for (const chat of chatsNew) {
-    tgRequest('sendMessage', { chat_id: chat.chat_id, text, parse_mode: 'HTML', disable_web_page_preview: true })
+    const p = { chat_id: chat.chat_id, text, parse_mode: 'HTML', disable_web_page_preview: true };
+    if (chat.thread_id) p.message_thread_id = parseInt(chat.thread_id);
+    tgRequest('sendMessage', p)
       .then(r => { if (r.ok) db.prepare('UPDATE broadcast_chats SET message_id = ? WHERE id = ?').run(String(r.result.message_id), chat.id); })
       .catch(() => {});
   }
@@ -831,9 +836,9 @@ app.get('/api/broadcast/chats', (req, res) => {
 
 app.post('/api/broadcast/chats', (req, res) => {
   try {
-    const { chat_id, title } = req.body;
+    const { chat_id, title, thread_id } = req.body;
     if (!chat_id) return res.status(400).json({ error: 'chat_id required' });
-    db.prepare('INSERT OR REPLACE INTO broadcast_chats (chat_id, title) VALUES (?, ?)').run(String(chat_id), title || String(chat_id));
+    db.prepare('INSERT OR REPLACE INTO broadcast_chats (chat_id, title, thread_id) VALUES (?, ?, ?)').run(String(chat_id), title || String(chat_id), thread_id ? String(thread_id) : null);
     auditLog(getIp(req), 'BROADCAST_CHAT_ADD', `chat_id=${chat_id}`);
     res.json(db.prepare('SELECT * FROM broadcast_chats WHERE chat_id = ?').get(String(chat_id)));
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -841,10 +846,11 @@ app.post('/api/broadcast/chats', (req, res) => {
 
 app.put('/api/broadcast/chats/:id', (req, res) => {
   try {
-    const { auto_edit, title, message_id } = req.body;
+    const { auto_edit, title, message_id, thread_id } = req.body;
     const sets = []; const params = [];
     if (title      !== undefined) { sets.push('title = ?');      params.push(title); }
     if (message_id !== undefined) { sets.push('message_id = ?'); params.push(message_id); }
+    if (thread_id  !== undefined) { sets.push('thread_id = ?');  params.push(thread_id || null); }
     if (auto_edit  !== undefined) { sets.push('auto_edit = ?');  params.push(auto_edit ? 1 : 0); }
     if (!sets.length) return res.status(400).json({ error: 'nothing to update' });
     params.push(req.params.id);
@@ -891,7 +897,9 @@ app.post('/api/broadcast/send', async (req, res) => {
     const results = [];
     for (const chat of chats) {
       try {
-        const r = await tgRequest('sendMessage', { chat_id: chat.chat_id, text, parse_mode: 'HTML', disable_web_page_preview: true });
+        const p = { chat_id: chat.chat_id, text, parse_mode: 'HTML', disable_web_page_preview: true };
+        if (chat.thread_id) p.message_thread_id = parseInt(chat.thread_id);
+        const r = await tgRequest('sendMessage', p);
         if (r.ok) {
           const msgId = String(r.result.message_id);
           db.prepare('UPDATE broadcast_chats SET message_id = ? WHERE id = ?').run(msgId, chat.id);

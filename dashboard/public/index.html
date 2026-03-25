@@ -944,8 +944,12 @@ input[type=number] { -moz-appearance: textfield; }
           <div id="bc-result" style="margin-top:8px;font-size:13px;"></div>
         </div>
         <div>
+          <div style="margin-bottom:8px;">
+            <input id="bc-new-link" placeholder="Ссылка t.me/c/... или ID чата / @username" oninput="parseBcLink(this.value)" style="width:100%;padding:8px;background:#1a1a2e;border:1px solid #2d5a2d;border-radius:6px;color:#e0e0e0;font-size:13px;box-sizing:border-box;">
+          </div>
           <div style="display:flex;gap:8px;margin-bottom:12px;">
-            <input id="bc-new-chat-id" placeholder="ID или @username чата" style="flex:2;padding:8px;background:#1a1a2e;border:1px solid #2d5a2d;border-radius:6px;color:#e0e0e0;font-size:13px;">
+            <input id="bc-new-chat-id" placeholder="Chat ID" style="flex:2;padding:8px;background:#1a1a2e;border:1px solid #2d5a2d;border-radius:6px;color:#e0e0e0;font-size:13px;">
+            <input id="bc-new-thread-id" placeholder="Топик ID" style="flex:1;padding:8px;background:#1a1a2e;border:1px solid #2d5a2d;border-radius:6px;color:#e0e0e0;font-size:13px;">
             <input id="bc-new-chat-title" placeholder="Название" style="flex:1;padding:8px;background:#1a1a2e;border:1px solid #2d5a2d;border-radius:6px;color:#e0e0e0;font-size:13px;">
             <button class="btn btn-primary" onclick="addBroadcastChat()" style="padding:8px 14px;">+</button>
           </div>
@@ -1944,9 +1948,11 @@ function renderBcChats() {
         <div>
           <div style="font-weight:600;color:#e0e0e0;">${escHtml(c.title || c.chat_id)}</div>
           <div style="font-size:12px;color:#666;">${escHtml(c.chat_id)}</div>
-          <div style="font-size:12px;color:#888;margin-top:2px;">
-            ID сообщения: <input value="${escHtml(c.message_id || '')}" placeholder="нет" onchange="updateChatMsgId(${c.id}, this.value)"
-              style="background:#1a1a2e;border:1px solid #2d2d4e;border-radius:4px;color:#e0e0e0;padding:2px 6px;font-size:12px;width:90px;">
+          <div style="font-size:12px;color:#888;margin-top:2px;display:flex;gap:8px;flex-wrap:wrap;">
+            <span>Msg ID: <input value="${escHtml(c.message_id || '')}" placeholder="нет" onchange="updateChatMsgId(${c.id}, this.value)"
+              style="background:#1a1a2e;border:1px solid #2d2d4e;border-radius:4px;color:#e0e0e0;padding:2px 6px;font-size:12px;width:80px;"></span>
+            <span>Топик: <input value="${escHtml(c.thread_id || '')}" placeholder="нет" onchange="updateChatThreadId(${c.id}, this.value)"
+              style="background:#1a1a2e;border:1px solid #2d2d4e;border-radius:4px;color:#e0e0e0;padding:2px 6px;font-size:12px;width:60px;"></span>
           </div>
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
@@ -1980,15 +1986,32 @@ async function previewBroadcast() {
   el.textContent = r.text || r.error || '';
 }
 
+function parseBcLink(val) {
+  // https://t.me/c/1234567890/2  → chat_id=-1001234567890, thread_id=2
+  const m = val.match(/t\.me\/c\/(\d+)(?:\/(\d+))?/);
+  if (m) {
+    document.getElementById('bc-new-chat-id').value = '-100' + m[1];
+    if (m[2]) document.getElementById('bc-new-thread-id').value = m[2];
+  }
+}
+
 async function addBroadcastChat() {
-  const chat_id = document.getElementById('bc-new-chat-id').value.trim();
-  const title   = document.getElementById('bc-new-chat-title').value.trim();
+  const chat_id   = document.getElementById('bc-new-chat-id').value.trim();
+  const thread_id = document.getElementById('bc-new-thread-id').value.trim();
+  const title     = document.getElementById('bc-new-chat-title').value.trim();
   if (!chat_id) return showToast('Введите ID чата');
-  await fetch('/api/broadcast/chats', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ chat_id, title }) });
+  await fetch('/api/broadcast/chats', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ chat_id, title, thread_id: thread_id || null }) });
+  document.getElementById('bc-new-link').value = '';
   document.getElementById('bc-new-chat-id').value = '';
+  document.getElementById('bc-new-thread-id').value = '';
   document.getElementById('bc-new-chat-title').value = '';
   await loadBroadcast();
   showToast('Чат добавлен');
+}
+
+async function updateChatThreadId(id, thread_id) {
+  await fetch(`/api/broadcast/chats/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ thread_id: thread_id || null }) });
+  showToast('Топик обновлён');
 }
 
 async function deleteBcChat(id) {
