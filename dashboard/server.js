@@ -10,7 +10,7 @@ const PORT = 3001;
 const DB_PATH = path.join(__dirname, '..', 'data', 'wanglogistic.db');
 const CONFIG_PATH = path.join(__dirname, '..', 'bot', 'config.py');
 
-const DASH_USER = 'admin';
+const DASH_USER = 'root';
 const DASH_PASS = process.env.DASH_PASS || 'QGl5h15At08H';
 const ALLOWED_ORIGIN = 'https://185-125-103-221.sslip.io';
 const AUDIT_LOG_PATH = path.join(__dirname, '..', 'data', 'audit.log');
