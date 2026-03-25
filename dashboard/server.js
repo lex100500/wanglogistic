@@ -12,6 +12,7 @@ const CONFIG_PATH = path.join(__dirname, '..', 'bot', 'config.py');
 
 const DASH_USER = 'root';
 const DASH_PASS = process.env.DASH_PASS || 'QGl5h15At08H';
+const ACCESS_TOKEN = process.env.ACCESS_TOKEN || 'wl-' + require('crypto').createHash('sha256').update(DASH_PASS).digest('hex').slice(0, 24);
 const ALLOWED_ORIGIN = 'https://185-125-103-221.sslip.io';
 const AUDIT_LOG_PATH = path.join(__dirname, '..', 'data', 'audit.log');
 
@@ -85,8 +86,19 @@ app.use((req, res, next) => {
   next();
 });
 
-// Basic Auth with brute-force protection
+// Basic Auth with brute-force protection + token access
 app.use((req, res, next) => {
+  // Token via URL param → set cookie and redirect clean URL
+  if (req.query.token && req.query.token === ACCESS_TOKEN) {
+    res.setHeader('Set-Cookie', `access_token=${ACCESS_TOKEN}; Path=/; HttpOnly; SameSite=Strict`);
+    const clean = req.path + (Object.keys(req.query).filter(k => k !== 'token').length ? '?' + Object.entries(req.query).filter(([k]) => k !== 'token').map(([k,v]) => `${k}=${v}`).join('&') : '');
+    return res.redirect(302, clean || '/');
+  }
+  // Token via cookie
+  const cookie = req.headers['cookie'] || '';
+  const tokenMatch = cookie.match(/access_token=([^;]+)/);
+  if (tokenMatch && tokenMatch[1] === ACCESS_TOKEN) return next();
+
   const ip = getIp(req);
   if (isAuthBlocked(ip)) {
     return res.status(429).send('Too many failed attempts. Try again in 30 minutes.');
@@ -935,6 +947,11 @@ app.post('/api/broadcast/edit', async (req, res) => {
     auditLog(getIp(req), 'BROADCAST_EDIT', `chats=${chats.length}`);
     res.json({ results, text });
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/access-link', (req, res) => {
+  const host = req.headers['host'] || `45.43.88.74:${PORT}`;
+  res.json({ url: `http://${host}/?token=${ACCESS_TOKEN}` });
 });
 
 // SPA fallback
