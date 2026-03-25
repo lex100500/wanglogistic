@@ -144,7 +144,6 @@ def confirm_payment_kb(order_id: str) -> InlineKeyboardMarkup:
 def confirm_payment_with_receipt_kb(order_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📎 Прикрепить чек", callback_data=f"attach_receipt:{order_id}")],
-        [InlineKeyboardButton(text="✅ Подтвердить оплату", callback_data=f"paid:{order_id}")],
         [InlineKeyboardButton(text="✉️ Написать менеджеру", callback_data=f"msg:{order_id}")],
     ])
 

@@ -861,7 +861,7 @@ async def attach_receipt_start(callback: types.CallbackQuery, state: FSMContext)
     await state.set_state(OrderFSM.waiting_receipt_file)
     await state.update_data(receipt_order_id=order_id)
     await callback.message.answer(
-        "📎 Пришлите PDF файл чека или выписку из банка:\n"
+        "📎 Пришлите чек — PDF файл или фотографию:\n"
         "(/cancel для отмены)"
     )
     await callback.answer()
@@ -874,14 +874,22 @@ async def receive_receipt_file(message: types.Message, state: FSMContext, bot: B
         await message.answer("Отменено.")
         return
 
-    if not message.document:
-        await message.answer("📎 Пришлите файл в формате PDF (документ, не фото):")
+    is_photo = bool(message.photo)
+    is_doc = bool(message.document)
+
+    if not is_photo and not is_doc:
+        await message.answer("📎 Пришлите чек — PDF файл или фотографию:")
         return
 
     data = await state.get_data()
     order_id = data["receipt_order_id"]
-    file_id = message.document.file_id
-    file_name = message.document.file_name or "receipt.pdf"
+
+    if is_photo:
+        file_id = message.photo[-1].file_id
+        file_name = "photo"
+    else:
+        file_id = message.document.file_id
+        file_name = message.document.file_name or "receipt.pdf"
 
     db.save_message(order_id, message.from_user.id, f"[чек: {file_name}]", file_id=file_id)
     await state.clear()
@@ -897,11 +905,18 @@ async def receive_receipt_file(message: types.Message, state: FSMContext, bot: B
     order = db.get_order(order_id)
     if order and order["manager_id"]:
         try:
-            await bot.send_document(
-                order["manager_id"],
-                document=file_id,
-                caption=f"📎 Клиент прикрепил чек по заявке #{order_id}",
-            )
+            if is_photo:
+                await bot.send_photo(
+                    order["manager_id"],
+                    photo=file_id,
+                    caption=f"📎 Клиент прикрепил чек (фото) по заявке #{order_id}",
+                )
+            else:
+                await bot.send_document(
+                    order["manager_id"],
+                    document=file_id,
+                    caption=f"📎 Клиент прикрепил чек по заявке #{order_id}",
+                )
         except Exception:
             pass
 
